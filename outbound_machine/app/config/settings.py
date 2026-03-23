@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     # Scoring config
     scoring_config_path: Path = Path("./app/config/scoring_config.yaml")
 
+    # AU discovery config
+    au_discovery_config_path: Path = Path("./app/config/au_discovery_config.yaml")
+
     # Logging
     log_level: str = "INFO"
 

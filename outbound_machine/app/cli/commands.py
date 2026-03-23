@@ -4,20 +4,26 @@ All commands are available via: python -m app.cli.commands <command>
 Or via the installed script: outbound <command>
 
 Commands:
-  init-db              Initialise database tables
-  ingest-candidates    Import brands from a CSV file
-  detect-shopify       Run Shopify detection on all undetected leads
-  estimate-skus        Run SKU estimation on all leads
-  sample-products      Sample product URLs for all leads
-  scrape-products      Scrape sampled product pages
-  capture-screens      Capture screenshots (requires ENABLE_SCREENSHOTS=true)
-  audit-leads          Run imagery audit on all scraped leads
-  score-leads          Score and segment all audited leads
-  generate-outbound    Generate personalised email/Loom copy
-  export-review-queue  Export leads for human review to CSV
-  export-approved      Export approved leads to CSV
-  run-pipeline         Run full pipeline (all stages) for all unprocessed leads
-  demo                 Run a quick demo on sample data
+  init-db                Initialise database tables
+  ingest-candidates      Import brands from a CSV file
+  detect-shopify         Run Shopify detection on all undetected leads
+  estimate-skus          Run SKU estimation on all leads
+  sample-products        Sample product URLs for all leads
+  scrape-products        Scrape sampled product pages
+  capture-screens        Capture screenshots (requires ENABLE_SCREENSHOTS=true)
+  audit-leads            Run imagery audit on all scraped leads
+  score-leads            Score and segment all audited leads
+  generate-outbound      Generate personalised email/Loom copy
+  export-review-queue    Export leads for human review to CSV
+  export-approved        Export approved leads to CSV
+  run-pipeline           Run full pipeline (all stages) for all unprocessed leads
+  demo                   Run a quick demo on sample data
+
+  --- Australian store discovery ---
+  discover-au-stores     Find new AU e-commerce domains via search queries
+  detect-au              Run AU confidence detection on a domain or all candidates
+  discover-and-qualify-au  Discovery + qualification + pipeline for new AU stores
+  run-daily-au-pipeline  Full daily automation: discover → qualify → pipeline → export
 """
 import json
 import logging
@@ -571,6 +577,398 @@ def _print_pipeline_summary(leads) -> None:
             "✓" if l.mock_opportunity else "-",
         )
     console.print(table)
+
+
+# ===========================================================================
+# Australian store discovery commands
+# ===========================================================================
+
+def _load_au_config() -> dict:
+    """Load au_discovery_config.yaml. Returns {} if missing."""
+    import yaml
+    from app.config.settings import settings
+    path = settings.au_discovery_config_path
+    if not path.exists():
+        console.print(f"[yellow]AU discovery config not found at {path}[/yellow]")
+        return {}
+    with open(path) as f:
+        return yaml.safe_load(f) or {}
+
+
+# ---------------------------------------------------------------------------
+# discover-au-stores
+# ---------------------------------------------------------------------------
+
+@cli.command("discover-au-stores")
+@click.option("--limit", default=None, type=int, help="Max new candidate domains to discover")
+@click.option("--vertical", default=None, help="Only run queries for this vertical (apparel/beauty/etc.)")
+@click.option("--au-threshold", default=None, type=float, help="Override AU confidence threshold")
+@click.option("--no-export", is_flag=True, help="Skip CSV export")
+def discover_au_stores_cmd(
+    limit: Optional[int],
+    vertical: Optional[str],
+    au_threshold: Optional[float],
+    no_export: bool,
+):
+    """
+    Find new Australian e-commerce domains via DuckDuckGo search queries.
+
+    Queries are loaded from app/config/au_discovery_config.yaml grouped by
+    vertical. Each discovered domain is AU-detected; those passing the
+    confidence threshold are saved as Candidates. Exports
+    all_new_au_shopify_candidates.csv when done.
+    """
+    _setup()
+    from app.db.database import session_scope
+    from app.db.models import Candidate
+    from app.services.detection.au_detector import detect_au
+    from app.services.discovery.au_store_finder import (
+        discover_au_candidates, get_existing_domains,
+    )
+    from app.services.exports.csv_exporter import export_au_candidates
+
+    cfg = _load_au_config()
+    if not cfg:
+        console.print("[red]Cannot run discovery without au_discovery_config.yaml[/red]")
+        return
+
+    disc_cfg = cfg.get("discovery", {})
+    qual_cfg = cfg.get("qualification", {})
+    au_thresh = au_threshold or qual_cfg.get("au_confidence_threshold", 0.55)
+    daily_limit = limit or disc_cfg.get("daily_limit", 100)
+    limit_per_query = disc_cfg.get("limit_per_query", 12)
+    search_delay = disc_cfg.get("search_delay_seconds", 3.5)
+
+    # Build query set (optionally filtered by vertical)
+    queries_all: dict[str, list[str]] = cfg.get("queries", {})
+    if vertical:
+        v = vertical.lower().strip()
+        if v not in queries_all:
+            console.print(f"[yellow]Vertical '{v}' not found in config. Available: {list(queries_all)}[/yellow]")
+            return
+        queries_all = {v: queries_all[v]}
+
+    console.print(
+        f"[bold]AU Store Discovery[/bold] — "
+        f"{sum(len(q) for q in queries_all.values())} queries across "
+        f"{len(queries_all)} vertical(s) | limit={daily_limit}"
+    )
+
+    # Get existing domains to skip
+    with session_scope() as session:
+        existing = get_existing_domains(session)
+
+    console.print(f"  Skipping {len(existing)} domains already in DB")
+
+    # Run discovery
+    with console.status("Searching DuckDuckGo..."):
+        results = discover_au_candidates(
+            queries_by_vertical=queries_all,
+            limit_per_query=limit_per_query,
+            search_delay=search_delay,
+            existing_domains=existing,
+            daily_limit=daily_limit,
+        )
+
+    console.print(f"  Found {len(results)} new candidate domains")
+    if not results:
+        console.print("[yellow]No new domains found.[/yellow]")
+        return
+
+    # Run AU detection on each candidate
+    console.print(f"\nRunning AU detection on {len(results)} domains...")
+    passed: list[Candidate] = []
+    failed_au: list[str] = []
+
+    with session_scope() as session:
+        for r in results:
+            try:
+                au = detect_au(r.domain)
+                brand_guess = r.domain.split(".")[0].replace("-", " ").replace("_", " ").title()
+
+                candidate = Candidate(
+                    brand_name=brand_guess,
+                    domain=r.domain,
+                    source="au_discovery",
+                    vertical=r.discovery_vertical,
+                    discovery_source=r.discovery_source,
+                    discovery_query=r.discovery_query,
+                    discovery_vertical=r.discovery_vertical,
+                    discovered_at=r.discovered_at,
+                    country_guess=au.country_guess,
+                    au_confidence=au.au_confidence,
+                    au_signals=au.au_signals,
+                )
+                session.add(candidate)
+                session.flush()
+
+                status_str = (
+                    f"[green]✓ AU[/green]" if au.au_confidence >= au_thresh
+                    else f"[yellow]✗ au={au.au_confidence:.2f}[/yellow]"
+                )
+                console.print(f"  {status_str}  {r.domain}  signals={au.au_signals}")
+
+                if au.au_confidence >= au_thresh:
+                    passed.append(candidate)
+                else:
+                    failed_au.append(r.domain)
+
+            except Exception as e:
+                logging.getLogger(__name__).error("AU detection failed for %s: %s", r.domain, e)
+
+    console.print(
+        f"\n[bold]Discovery summary:[/bold] "
+        f"[green]{len(passed)} passed AU threshold[/green] | "
+        f"{len(failed_au)} failed | "
+        f"{len(results)} total discovered"
+    )
+
+    if not no_export:
+        with session_scope() as session:
+            all_candidates = (
+                session.query(Candidate)
+                .filter(Candidate.source == "au_discovery")
+                .order_by(Candidate.discovered_at.desc())
+                .limit(daily_limit * 2)  # last two runs
+                .all()
+            )
+            path = export_au_candidates(all_candidates)
+        console.print(f"\n[green]Exported:[/green] {path}")
+
+
+# ---------------------------------------------------------------------------
+# detect-au
+# ---------------------------------------------------------------------------
+
+@cli.command("detect-au")
+@click.option("--domain", default=None, help="Run AU detection on this specific domain")
+@click.option("--limit", default=20, type=int, help="Max candidates to process (if no --domain)")
+def detect_au_cmd(domain: Optional[str], limit: int):
+    """
+    Run Australian confidence detection on a domain or all undetected candidates.
+
+    Prints AU confidence, triggered signals, and country guess. Updates
+    au_confidence / au_signals on the Candidate record.
+    """
+    _setup()
+    from app.db.database import session_scope
+    from app.db.models import Candidate
+    from app.services.detection.au_detector import detect_au
+
+    with session_scope() as session:
+        if domain:
+            candidate = session.query(Candidate).filter(Candidate.domain == domain).first()
+            if not candidate:
+                console.print(f"[yellow]No candidate for domain: {domain} — running detection without saving[/yellow]")
+                result = detect_au(domain)
+                _print_au_result(result)
+                return
+            candidates = [candidate]
+        else:
+            candidates = (
+                session.query(Candidate)
+                .filter(Candidate.au_confidence.is_(None))
+                .limit(limit)
+                .all()
+            )
+
+        console.print(f"Running AU detection on {len(candidates)} candidate(s)...")
+        for c in candidates:
+            result = detect_au(c.domain)
+            c.au_confidence = result.au_confidence
+            c.au_signals = result.au_signals
+            c.country_guess = result.country_guess
+            _print_au_result(result)
+
+    console.print("[green]AU detection complete.[/green]")
+
+
+def _print_au_result(result) -> None:
+    from app.services.detection.au_detector import AUDetectionResult
+    color = "green" if result.is_australian else ("yellow" if result.au_confidence >= 0.35 else "red")
+    console.print(
+        f"  [{color}]{result.domain}[/{color}]  "
+        f"confidence=[bold]{result.au_confidence:.3f}[/bold]  "
+        f"country={result.country_guess}  "
+        f"signals={result.au_signals}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# discover-and-qualify-au
+# ---------------------------------------------------------------------------
+
+@cli.command("discover-and-qualify-au")
+@click.option("--limit", default=None, type=int, help="Max new domains to discover")
+@click.option("--vertical", default=None, help="Limit queries to one vertical")
+@click.option("--skip-pipeline", is_flag=True, help="Qualify only — skip full pipeline on new leads")
+def discover_and_qualify_au_cmd(
+    limit: Optional[int],
+    vertical: Optional[str],
+    skip_pipeline: bool,
+):
+    """
+    Discover new AU Shopify stores and run qualification + full pipeline.
+
+    Steps:
+      1. discover-au-stores   — find candidates, run AU detection
+      2. Shopify detection    — gate on shopify_confidence threshold
+      3. SKU estimation       — gate on target_sku_bands
+      4. Create Lead records for qualified candidates
+      5. Run full pipeline on each qualified Lead
+      6. Export qualified_au_outbound_leads.csv
+    """
+    _setup()
+    from app.db.database import session_scope
+    from app.db.models import Candidate, Lead
+    from app.services.pipeline import (
+        run_au_qualification_stage, create_lead_from_candidate, run_full_pipeline,
+    )
+    from app.services.exports.csv_exporter import export_qualified_au_leads
+
+    cfg = _load_au_config()
+    qual_cfg = cfg.get("qualification", {})
+    au_thresh = qual_cfg.get("au_confidence_threshold", 0.55)
+    shopify_thresh = qual_cfg.get("shopify_confidence_threshold", 0.50)
+    sku_bands = qual_cfg.get("target_sku_bands", ["20_50", "50_100", "100_200"])
+
+    ctx = click.get_current_context()
+
+    # Step 1: discover
+    console.print("[bold]Step 1: Discovery[/bold]")
+    ctx.invoke(discover_au_stores_cmd, limit=limit, vertical=vertical, no_export=True)
+
+    # Step 2+3+4: qualify and create leads
+    console.print("\n[bold]Step 2: Qualification[/bold]")
+
+    qualified_leads: list = []
+    qualification_results: dict[str, dict] = {}
+
+    with session_scope() as session:
+        # Candidates that passed AU threshold but don't yet have a Lead
+        au_candidates = (
+            session.query(Candidate)
+            .filter(
+                Candidate.au_confidence >= au_thresh,
+                Candidate.source == "au_discovery",
+                ~Candidate.domain.in_(
+                    session.query(Lead.domain)
+                ),
+            )
+            .all()
+        )
+
+        console.print(f"  Qualifying {len(au_candidates)} AU-confirmed candidates...")
+
+        for c in au_candidates:
+            qualified, reason, meta = run_au_qualification_stage(
+                c, session,
+                au_confidence_threshold=au_thresh,
+                shopify_confidence_threshold=shopify_thresh,
+                target_sku_bands=sku_bands,
+            )
+            qualification_results[c.domain] = {
+                "qualifies": qualified,
+                "disqualify_reason": "" if qualified else reason,
+                **meta,
+            }
+
+            if qualified:
+                lead = create_lead_from_candidate(c, session, meta)
+                qualified_leads.append(lead.id)
+                console.print(f"  [green]✓[/green] {c.domain} — Shopify={meta.get('shopify_confidence', 0):.2f} SKU={meta.get('estimated_sku_range')}")
+            else:
+                console.print(f"  [yellow]✗[/yellow] {c.domain} — {reason}")
+
+    console.print(f"\n  {len(qualified_leads)} leads qualified")
+
+    if not qualified_leads or skip_pipeline:
+        if skip_pipeline:
+            console.print("[yellow]--skip-pipeline: skipping full pipeline run[/yellow]")
+        return
+
+    # Step 5: run full pipeline on qualified leads
+    console.print(f"\n[bold]Step 3: Pipeline ({len(qualified_leads)} leads)[/bold]")
+    processed = []
+    with session_scope() as session:
+        for lead_id in qualified_leads:
+            lead = session.query(Lead).filter(Lead.id == lead_id).first()
+            if lead:
+                try:
+                    lead = run_full_pipeline(lead, session)
+                    processed.append(lead)
+                    seg_color = {"A": "green", "B": "cyan", "C": "yellow", "D": "red"}.get(
+                        lead.lead_segment or "D", "white"
+                    )
+                    console.print(
+                        f"  {lead.domain} → score=[{seg_color}]{lead.lead_score:.1f}[/{seg_color}]"
+                        f" [{seg_color}]{lead.lead_segment}[/{seg_color}]"
+                    )
+                except Exception as e:
+                    logging.getLogger(__name__).error("Pipeline failed for lead %d: %s", lead_id, e)
+
+        # Step 6: export
+        if processed:
+            path = export_qualified_au_leads(processed)
+            console.print(f"\n[green]Exported:[/green] {path}")
+            _print_pipeline_summary(processed)
+
+
+# ---------------------------------------------------------------------------
+# run-daily-au-pipeline
+# ---------------------------------------------------------------------------
+
+@cli.command("run-daily-au-pipeline")
+@click.option("--limit", default=None, type=int, help="Override daily_limit from config")
+@click.option("--vertical", default=None, help="Limit to one vertical")
+@click.option("--dry-run", is_flag=True, help="Discovery only — no DB writes, no pipeline")
+def run_daily_au_pipeline_cmd(
+    limit: Optional[int],
+    vertical: Optional[str],
+    dry_run: bool,
+):
+    """
+    Full daily automation: discover AU Shopify stores → qualify → pipeline → export.
+
+    This is the single command to run on a schedule (cron/Cloud Scheduler):
+
+      outbound run-daily-au-pipeline
+
+    Steps:
+      1. Load queries from au_discovery_config.yaml
+      2. Search DuckDuckGo for new AU e-commerce domains
+      3. Run AU detection — filter by au_confidence threshold
+      4. Save AU-detected domains as Candidates
+      5. Run Shopify + SKU qualification gates
+      6. Create Leads for qualified candidates
+      7. Run full pipeline (audit → score → email/Loom)
+      8. Export:
+           data/exports/all_new_au_shopify_candidates_<ts>.csv
+           data/exports/qualified_au_outbound_leads_<ts>.csv
+      9. Print summary table
+
+    Use --dry-run to preview what would be discovered without writing to DB.
+    """
+    if dry_run:
+        console.print("[bold yellow]DRY RUN — no DB writes[/bold yellow]")
+        _setup()
+        cfg = _load_au_config()
+        queries_all: dict[str, list[str]] = cfg.get("queries", {})
+        if vertical:
+            v = vertical.lower().strip()
+            queries_all = {v: queries_all.get(v, [])}
+        total_queries = sum(len(q) for q in queries_all.values())
+        console.print(f"Would run {total_queries} queries across {len(queries_all)} vertical(s)")
+        for vert, qs in queries_all.items():
+            console.print(f"  [bold]{vert}[/bold] ({len(qs)} queries):")
+            for q in qs:
+                console.print(f"    • {q}")
+        return
+
+    ctx = click.get_current_context()
+    console.rule("[bold]Daily AU Pipeline[/bold]")
+    ctx.invoke(discover_and_qualify_au_cmd, limit=limit, vertical=vertical, skip_pipeline=False)
+    console.rule("[bold]Daily AU Pipeline Complete[/bold]")
 
 
 if __name__ == "__main__":

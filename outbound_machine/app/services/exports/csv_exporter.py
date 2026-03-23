@@ -16,10 +16,32 @@ from pathlib import Path
 from typing import Optional
 
 from app.config.settings import settings
-from app.db.models import Lead, ReviewStatus
+from app.db.models import Lead, Candidate, ReviewStatus
 from app.schemas.lead import LeadPacket, LeadSummary
 
 logger = logging.getLogger(__name__)
+
+# --- AU candidates export columns (pre-qualification, all discovered) ---
+AU_CANDIDATES_COLUMNS = [
+    "domain", "discovery_source", "discovery_query", "discovery_vertical",
+    "country_guess", "au_confidence", "au_signals",
+    "shopify_confidence", "estimated_sku_range", "qualifies",
+    "disqualify_reason", "discovered_at",
+]
+
+# --- Qualified AU outbound leads export columns ---
+QUALIFIED_AU_COLUMNS = [
+    "id", "brand_name", "domain", "vertical",
+    "discovery_source", "discovery_query", "discovery_vertical",
+    "country_guess", "au_confidence", "au_signals",
+    "shopify_detected", "shopify_confidence", "estimated_sku_range",
+    "lead_score", "lead_segment", "mock_opportunity",
+    "imagery_audit_summary", "top_findings",
+    "commercial_pain_hypothesis",
+    "personalised_email_subject", "personalised_email_body",
+    "contact_email", "contact_name",
+    "discovered_at", "created_at",
+]
 
 # --- Review queue columns ---
 REVIEW_COLUMNS = [
@@ -194,6 +216,111 @@ def _packet_to_row(p: LeadPacket) -> dict:
         "contact_name": p.contact_name or "",
         "created_at": p.created_at.isoformat() if p.created_at else "",
     }
+
+
+def export_au_candidates(
+    candidates: list[Candidate],
+    qualification_results: Optional[dict[str, dict]] = None,
+    output_path: Optional[Path] = None,
+) -> Path:
+    """
+    Export all newly discovered AU candidate domains with their AU/Shopify
+    detection results and qualification outcome.
+
+    Args:
+        candidates:             Candidate ORM objects from discovery run.
+        qualification_results:  Optional dict mapping domain → {"qualifies": bool,
+                                "disqualify_reason": str, "shopify_confidence": float,
+                                "estimated_sku_range": str}.
+        output_path:            Override default path.
+
+    Returns:
+        Path to the written CSV.
+    """
+    if output_path is None:
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        output_path = settings.exports_dir / f"all_new_au_shopify_candidates_{ts}.csv"
+
+    qual = qualification_results or {}
+    rows = []
+    for c in candidates:
+        q = qual.get(c.domain, {})
+        rows.append({
+            "domain": c.domain,
+            "discovery_source": c.discovery_source or "",
+            "discovery_query": c.discovery_query or "",
+            "discovery_vertical": c.discovery_vertical or "",
+            "country_guess": c.country_guess or "",
+            "au_confidence": f"{c.au_confidence:.3f}" if c.au_confidence is not None else "",
+            "au_signals": json.dumps(c.au_signals or []),
+            "shopify_confidence": f"{q.get('shopify_confidence', ''):.3f}" if q.get("shopify_confidence") is not None else "",
+            "estimated_sku_range": q.get("estimated_sku_range", ""),
+            "qualifies": q.get("qualifies", ""),
+            "disqualify_reason": q.get("disqualify_reason", ""),
+            "discovered_at": c.discovered_at.isoformat() if c.discovered_at else "",
+        })
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_csv(output_path, AU_CANDIDATES_COLUMNS, rows)
+    logger.info("AU candidates exported: %s (%d rows)", output_path, len(rows))
+    return output_path
+
+
+def export_qualified_au_leads(
+    leads: list[Lead],
+    output_path: Optional[Path] = None,
+) -> Path:
+    """
+    Export AU leads that passed qualification and have been scored.
+    Includes all personalisation assets and AU discovery metadata.
+
+    Returns:
+        Path to the written CSV.
+    """
+    if output_path is None:
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        output_path = settings.exports_dir / f"qualified_au_outbound_leads_{ts}.csv"
+
+    rows = []
+    for lead in leads:
+        findings = lead.audit_findings or []
+        top = "; ".join(
+            f"{f.get('code', '')} ({f.get('severity', '')})"
+            for f in findings[:3]
+        ) if findings else ""
+
+        rows.append({
+            "id": lead.id,
+            "brand_name": lead.brand_name,
+            "domain": lead.domain,
+            "vertical": lead.vertical or "",
+            "discovery_source": lead.discovery_source or "",
+            "discovery_query": lead.discovery_query or "",
+            "discovery_vertical": lead.discovery_vertical or "",
+            "country_guess": lead.country_guess or "",
+            "au_confidence": f"{lead.au_confidence:.3f}" if lead.au_confidence is not None else "",
+            "au_signals": json.dumps(lead.au_signals or []),
+            "shopify_detected": lead.shopify_detected,
+            "shopify_confidence": lead.shopify_confidence,
+            "estimated_sku_range": lead.estimated_sku_range or "",
+            "lead_score": lead.lead_score,
+            "lead_segment": lead.lead_segment or "",
+            "mock_opportunity": lead.mock_opportunity,
+            "imagery_audit_summary": (lead.imagery_audit_summary or "").replace("\n", " "),
+            "top_findings": top,
+            "commercial_pain_hypothesis": (lead.commercial_pain_hypothesis or "").replace("\n", " "),
+            "personalised_email_subject": lead.personalised_email_subject or "",
+            "personalised_email_body": (lead.personalised_email_body or "").replace("\n", "\\n"),
+            "contact_email": lead.contact_email or "",
+            "contact_name": lead.contact_name or "",
+            "discovered_at": lead.discovered_at.isoformat() if lead.discovered_at else "",
+            "created_at": lead.created_at.isoformat() if lead.created_at else "",
+        })
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_csv(output_path, QUALIFIED_AU_COLUMNS, rows)
+    logger.info("Qualified AU leads exported: %s (%d rows)", output_path, len(rows))
+    return output_path
 
 
 def _write_csv(path: Path, columns: list[str], rows: list[dict]) -> None:

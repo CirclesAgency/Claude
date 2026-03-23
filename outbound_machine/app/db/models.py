@@ -73,6 +73,17 @@ class Candidate(Base):
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
+    # Discovery metadata (populated by automated AU store discovery)
+    discovery_source = Column(String(100), nullable=True)    # "duckduckgo_search" | "manual" | etc.
+    discovery_query = Column(String(500), nullable=True)     # search query that surfaced this domain
+    discovery_vertical = Column(String(100), nullable=True)  # vertical the query belonged to
+    discovered_at = Column(DateTime(timezone=True), nullable=True)
+
+    # AU detection results
+    country_guess = Column(String(10), nullable=True)        # "AU" | "AU?" | "unknown"
+    au_confidence = Column(Float, nullable=True)             # 0.0–1.0
+    au_signals = Column(JSON, default=list)                  # list of triggered signal codes
+
     # Relationship to lead (1:1, created after detection)
     lead = relationship("Lead", back_populates="candidate", uselist=False)
 
@@ -92,6 +103,15 @@ class Lead(Base):
     domain = Column(String(255), nullable=False)
     source = Column(String(255), nullable=True)
     vertical = Column(String(100), nullable=True)
+
+    # Discovery + AU detection (denormalised from Candidate for easy querying/export)
+    discovery_source = Column(String(100), nullable=True)
+    discovery_query = Column(String(500), nullable=True)
+    discovery_vertical = Column(String(100), nullable=True)
+    discovered_at = Column(DateTime(timezone=True), nullable=True)
+    country_guess = Column(String(10), nullable=True)
+    au_confidence = Column(Float, nullable=True)
+    au_signals = Column(JSON, default=list)
 
     # Shopify detection
     shopify_detected = Column(Boolean, nullable=True)

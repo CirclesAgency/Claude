@@ -1,0 +1,96 @@
+# ============================================================
+# Australian Shopify Store Discovery Configuration
+# ============================================================
+# Controls daily automated discovery of Australian e-commerce
+# domains, AU confidence thresholds, qualification filters,
+# and the search queries used to surface new candidates.
+#
+# To adjust: change values here. No code changes needed.
+
+# ---- Discovery limits -------------------------------------------
+discovery:
+  daily_limit: 100          # max new candidate domains per run
+  limit_per_query: 12       # max result URLs extracted per search query
+  search_delay_seconds: 3.5 # polite delay between DuckDuckGo requests
+
+# ---- Qualification thresholds -----------------------------------
+# A candidate domain must pass all three gates before a Lead is created
+# and the full pipeline runs.
+qualification:
+  au_confidence_threshold: 0.55      # min AU detection confidence (0–1)
+  shopify_confidence_threshold: 0.50 # min Shopify detection confidence (0–1)
+  target_sku_bands:                  # only these SKU bands qualify
+    - "20_50"
+    - "50_100"
+    - "100_200"
+
+# ---- Preferred verticals ----------------------------------------
+# Discovery focuses on these verticals — queries below are grouped by vertical.
+preferred_verticals:
+  - apparel
+  - beauty
+  - accessories
+  - footwear
+  - homewares
+
+# ---- Export filenames -------------------------------------------
+export:
+  candidates_filename: "all_new_au_shopify_candidates.csv"
+  qualified_filename:  "qualified_au_outbound_leads.csv"
+
+# ---- Search queries per vertical --------------------------------
+# Each query is sent to DuckDuckGo. AU-locale results (kl=au-en) are
+# requested automatically. Use specific, brand-discovery-oriented queries
+# to surface independent DTC stores, not marketplaces or directories.
+#
+# Tips:
+#   - site:.com.au targets AU-registered domains specifically
+#   - Adding "Shopify" hints search engines towards Shopify merchants
+#   - Qualifier words ("brand", "independent", "Australian made") filter
+#     out marketplace pages and aggregator sites
+
+queries:
+  apparel:
+    - "Australian women's fashion brand Shopify store site:*.com.au"
+    - "Australian streetwear brand independent online store"
+    - "sustainable fashion brand Australia direct buy"
+    - "Australian activewear brand online shop Shopify"
+    - "Australian men's clothing brand DTC store"
+    - "Australian denim brand online buy"
+    - "Australian resort wear brand shop site:.com.au"
+
+  beauty:
+    - "Australian skincare brand online store site:.com.au"
+    - "Australian natural beauty brand Shopify buy"
+    - "Australian cosmetics brand direct to consumer"
+    - "Australian organic skincare independent brand shop"
+    - "cruelty free beauty brand Australia DTC"
+    - "Australian hair care brand online store"
+    - "Australian sunscreen brand shop site:.com.au"
+
+  accessories:
+    - "Australian jewellery brand online store site:.com.au"
+    - "Australian handbag accessories brand Shopify"
+    - "Australian leather goods brand buy online"
+    - "Australian sunglasses brand independent store"
+    - "Australian hat brand online shop site:.com.au"
+    - "Australian watch brand DTC online"
+    - "Australian belt wallet brand Shopify store"
+
+  footwear:
+    - "Australian shoe brand buy online site:.com.au"
+    - "Australian footwear brand Shopify store"
+    - "Australian sneaker brand independent shop"
+    - "Australian boots brand online store"
+    - "made in Australia shoes brand buy direct"
+    - "Australian sandals brand online shop"
+    - "Australian kids shoes brand Shopify site:.com.au"
+
+  homewares:
+    - "Australian homewares brand online store site:.com.au"
+    - "Australian interior design brand Shopify"
+    - "Australian cushion textile brand direct buy"
+    - "Australian candle brand online store site:.com.au"
+    - "Australian ceramics brand shop direct"
+    - "Australian linen brand online store"
+    - "Australian furniture brand DTC Shopify site:.com.au"

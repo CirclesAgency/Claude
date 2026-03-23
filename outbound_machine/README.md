@@ -32,24 +32,26 @@ personalised email + Loom outreach assets.
 
 ```
 app/
-├── config/           Settings (pydantic-settings), scoring_config.yaml
+├── config/           Settings (pydantic-settings), scoring_config.yaml,
+│                       au_discovery_config.yaml
 ├── core/             Logging, retry, rate limiting
 ├── db/               SQLAlchemy models, session factory
 ├── schemas/          Pydantic schemas (pure data, no DB)
 ├── services/
+│   ├── discovery/    AU store finder (DuckDuckGo search + domain extraction)
+│   ├── detection/    Shopify multi-signal detection, AU confidence detector
 │   ├── ingestion/    CSV → Candidate + Lead records
-│   ├── detection/    Shopify multi-signal detection
 │   ├── sku_estimation/ products.json / sitemap enumeration
 │   ├── sampling/     Diverse product URL selection
 │   ├── scraping/     PDP HTML + Shopify JSON scraping
 │   ├── screenshots/  Playwright capture (optional)
 │   ├── audit/        Rule-based imagery audit engine
-│   ├── scoring/      YAML-configurable weighted scoring
+│   ├── scoring/      YAML-configurable additive scoring
 │   ├── personalisation/ Pain hypothesis, email, Loom generators
 │   ├── crm/          Webhook CRM sync abstraction
-│   └── exports/      CSV export (review queue + approved)
+│   └── exports/      CSV export (review queue, approved, AU discovery)
 ├── templates/        Jinja2 email + Loom templates
-├── cli/              Click CLI commands
+├── cli/              Click CLI commands (19 total)
 └── utils/            Domain, HTTP client, image analysis
 ```
 
@@ -154,6 +156,106 @@ outbound export-approved               # exports leads with review_status=approv
 # Run everything
 outbound run-pipeline                  # --limit 10 --domain example.com
 outbound demo                          # Uses sample_candidates.csv
+
+# --- Australian store discovery ---
+outbound discover-au-stores            # Find new AU domains via DuckDuckGo
+outbound detect-au                     # --domain example.com.au
+outbound discover-and-qualify-au       # Discovery + Shopify gate + pipeline
+outbound run-daily-au-pipeline         # Full daily automation (see below)
+outbound run-daily-au-pipeline --dry-run  # Preview queries without writing to DB
+```
+
+---
+
+## Australian Shopify store discovery
+
+The system can automatically discover Australian e-commerce brands using DuckDuckGo search
+queries, run AU confidence detection, and push qualified stores through the full pipeline.
+
+### Simplest daily command
+
+```bash
+outbound run-daily-au-pipeline
+```
+
+This single command:
+1. Loads search queries from `app/config/au_discovery_config.yaml`
+2. Searches DuckDuckGo for new AU e-commerce domains (skips domains already in DB)
+3. Runs AU confidence detection on each new domain
+4. Filters by `au_confidence_threshold` (default 0.55)
+5. Runs Shopify detection + SKU estimation on AU-qualified candidates
+6. Filters by `shopify_confidence_threshold` (0.50) and `target_sku_bands`
+7. Creates Lead records for qualified candidates and runs the full pipeline
+8. Exports two CSVs:
+   - `data/exports/all_new_au_shopify_candidates_<ts>.csv`
+   - `data/exports/qualified_au_outbound_leads_<ts>.csv`
+
+### Run individual AU steps
+
+```bash
+# 1. Just find new AU domains (no pipeline)
+outbound discover-au-stores --vertical apparel
+
+# 2. Test AU detection on a single domain
+outbound detect-au --domain mybrand.com.au
+
+# 3. Discover + qualify + pipeline (no separate export step needed)
+outbound discover-and-qualify-au --limit 50 --vertical beauty
+
+# 4. Preview what queries would run (no HTTP, no DB writes)
+outbound run-daily-au-pipeline --dry-run
+```
+
+### AU detection signal model
+
+AU confidence is computed using Bayesian combination of deterministic signals:
+
+| Signal | Weight | Trigger |
+|--------|--------|---------|
+| `.com.au` TLD | 0.90 | Domain ends in `.com.au` |
+| ABN pattern | 0.85 | `ABN XX XXX XXX XXX` on page |
+| `.net.au` / `.org.au` | 0.80 | Other AU second-level domains |
+| `+61` phone | 0.72 | International dialling prefix |
+| `.au` gTLD | 0.70 | New 2022 `.au` gTLD |
+| ABN label | 0.70 | "ABN" text present (without full number) |
+| GST mention | 0.65 | "GST" or "Goods and Services Tax" |
+| AUD / A$ | 0.55 | Currency markers on page |
+| AU mobile | 0.55 | `04XX XXX XXX` format |
+| AU shipping | 0.50 | "Australia-wide", "ship to Australia" |
+| Pty Ltd | 0.45 | Company structure suffix |
+| AfterPay / Zip | 0.45 | AU-origin BNPL providers |
+| 2+ AU states | 0.45 | NSW, VIC, QLD, SA, WA, TAS, NT, ACT |
+| AU postcodes | 0.40 | 4-digit postcode in address context |
+| AU cities | 0.35 | Sydney, Melbourne, Brisbane, etc. |
+
+`confidence = 1 - ∏(1 - p_i)` — signals compound multiplicatively.
+
+### Configure discovery
+
+Edit `app/config/au_discovery_config.yaml`:
+
+```yaml
+discovery:
+  daily_limit: 100            # max new domains per run
+  limit_per_query: 12         # results per DuckDuckGo query
+  search_delay_seconds: 3.5   # polite delay between searches
+
+qualification:
+  au_confidence_threshold: 0.55
+  shopify_confidence_threshold: 0.50
+  target_sku_bands: [20_50, 50_100, 100_200]
+
+queries:
+  apparel:
+    - "Australian women's fashion brand Shopify store site:*.com.au"
+    # add more queries here
+```
+
+### Schedule daily discovery
+
+```bash
+# cron — run at 7am Sydney time every weekday
+0 21 * * 0-4 cd /app && outbound run-daily-au-pipeline >> logs/daily_au.log 2>&1
 ```
 
 ---

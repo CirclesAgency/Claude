@@ -1,6 +1,18 @@
 """
 Pipeline orchestrator.
 
+Also contains AU qualification stage (Stage 0) for the daily AU discovery
+pipeline. This stage gates Shopify detection + SKU estimation against
+configured thresholds before a Lead record is created.
+
+AU Qualification (Stage 0):
+  0a. AU detection already done on Candidate (stored as au_confidence)
+  0b. Shopify detection — filter if confidence < shopify_threshold
+  0c. SKU estimation — filter if band not in target_sku_bands
+  Result: qualified=True/False + reason string
+"""
+Pipeline orchestrator.
+
 Wires all stages together for a single lead, and provides a batch runner
 for processing multiple leads. Each stage is independently runnable.
 
@@ -337,6 +349,117 @@ def run_full_pipeline(lead: Lead, session: Session) -> Lead:
         lead.lead_score or 0,
         lead.lead_segment or "?",
     )
+    return lead
+
+
+def run_au_qualification_stage(
+    candidate,
+    session: Session,
+    au_confidence_threshold: float = 0.55,
+    shopify_confidence_threshold: float = 0.50,
+    target_sku_bands: Optional[list[str]] = None,
+) -> tuple[bool, str, dict]:
+    """
+    Stage 0: AU qualification gate. Run before creating a Lead record.
+
+    Runs Shopify detection and SKU estimation on a Candidate domain and
+    checks whether it meets the configured thresholds. AU detection must
+    already have been run and stored on the Candidate.
+
+    Args:
+        candidate:                    Candidate ORM object with au_confidence set.
+        session:                      SQLAlchemy session.
+        au_confidence_threshold:      Minimum AU confidence to pass.
+        shopify_confidence_threshold: Minimum Shopify confidence to pass.
+        target_sku_bands:             Allowed SKU range buckets; None = accept all.
+
+    Returns:
+        (qualified: bool, reason: str, metadata: dict)
+        metadata contains shopify_confidence and estimated_sku_range.
+    """
+    if target_sku_bands is None:
+        target_sku_bands = ["20_50", "50_100", "100_200"]
+
+    meta: dict = {}
+
+    # Gate 1: AU confidence (already computed, just check threshold)
+    au_conf = candidate.au_confidence or 0.0
+    if au_conf < au_confidence_threshold:
+        return (
+            False,
+            f"AU confidence {au_conf:.2f} < threshold {au_confidence_threshold}",
+            meta,
+        )
+
+    # Gate 2: Shopify detection
+    try:
+        from app.services.detection.shopify_detector import detect_shopify
+        shopify_result = detect_shopify(candidate.domain)
+        meta["shopify_confidence"] = shopify_result.confidence
+        meta["shopify_evidence"] = shopify_result.evidence
+
+        if shopify_result.confidence < shopify_confidence_threshold:
+            return (
+                False,
+                f"Shopify confidence {shopify_result.confidence:.2f} < threshold {shopify_confidence_threshold}",
+                meta,
+            )
+    except Exception as e:
+        logger.warning("[AU Qualify] Shopify detection failed for %s: %s", candidate.domain, e)
+        return False, f"Shopify detection error: {e}", meta
+
+    # Gate 3: SKU estimation
+    try:
+        from app.services.sku_estimation.sku_estimator import estimate_skus
+        sku_result = estimate_skus(candidate.domain)
+        meta["estimated_sku_range"] = sku_result.bucket
+        meta["sku_notes"] = sku_result.notes
+
+        if sku_result.bucket not in target_sku_bands:
+            return (
+                False,
+                f"SKU band '{sku_result.bucket}' not in target bands {target_sku_bands}",
+                meta,
+            )
+    except Exception as e:
+        logger.warning("[AU Qualify] SKU estimation failed for %s: %s", candidate.domain, e)
+        return False, f"SKU estimation error: {e}", meta
+
+    return True, "Passes all qualification gates", meta
+
+
+def create_lead_from_candidate(candidate, session: Session, meta: dict) -> Lead:
+    """
+    Create a Lead record from a Candidate that has passed AU qualification.
+    Denormalises discovery + detection fields from the Candidate onto the Lead.
+    """
+    from app.db.models import ReviewStatus, OutboundStatus
+    lead = Lead(
+        candidate_id=candidate.id,
+        brand_name=candidate.brand_name,
+        domain=candidate.domain,
+        vertical=candidate.vertical or candidate.discovery_vertical,
+        source=candidate.source or candidate.discovery_source,
+        # Discovery + AU metadata
+        discovery_source=candidate.discovery_source,
+        discovery_query=candidate.discovery_query,
+        discovery_vertical=candidate.discovery_vertical,
+        discovered_at=candidate.discovered_at,
+        country_guess=candidate.country_guess,
+        au_confidence=candidate.au_confidence,
+        au_signals=candidate.au_signals,
+        # Shopify + SKU results from qualification stage
+        shopify_confidence=meta.get("shopify_confidence"),
+        shopify_evidence=meta.get("shopify_evidence", []),
+        shopify_detected=(meta.get("shopify_confidence", 0) >= 0.5),
+        estimated_sku_range=meta.get("estimated_sku_range"),
+        sku_estimation_notes=meta.get("sku_notes"),
+        review_status=ReviewStatus.pending,
+        outbound_status=OutboundStatus.uncontacted,
+    )
+    session.add(lead)
+    session.flush()
+    logger.info("Created Lead for %s (au_conf=%.2f)", candidate.domain, candidate.au_confidence or 0)
     return lead
 
 
