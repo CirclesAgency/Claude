@@ -21,6 +21,10 @@ def make_score_input(**kwargs) -> ScoreInput:
         "has_mixed_aspect_ratios": False,
         "has_weak_variant_representation": False,
         "has_catalogue_depth_risk": False,
+        "high_finding_count": 1,
+        "medium_finding_count": 1,
+        "low_finding_count": 0,
+        "total_finding_count": 2,
         "mock_opportunity": True,
         "avg_variant_count": 3.0,
         "social_presence": True,
@@ -54,11 +58,18 @@ class TestScoringEngine:
             has_low_image_count=True,
             has_missing_detail_shots=True,
             has_weak_variant_representation=True,
+            high_finding_count=2,
+            medium_finding_count=1,
+            total_finding_count=3,
         )
         inp_clean = make_score_input(
             has_low_image_count=False,
             has_missing_detail_shots=False,
             has_weak_variant_representation=False,
+            high_finding_count=0,
+            medium_finding_count=0,
+            low_finding_count=0,
+            total_finding_count=0,
         )
         r1 = score_lead(inp_with_issues)
         r2 = score_lead(inp_clean)
@@ -130,7 +141,7 @@ class TestMockOpportunity:
             has_low_image_count=True,
         )
         result = score_lead(inp)
-        is_mock, reason = determine_mock_opportunity(inp, result)
+        is_mock, reason = determine_mock_opportunity(inp)
         assert is_mock is True
         assert len(reason) > 0
 
@@ -144,7 +155,7 @@ class TestMockOpportunity:
             has_inconsistent_backgrounds=False,
         )
         result = score_lead(inp)
-        is_mock, reason = determine_mock_opportunity(inp, result)
+        is_mock, reason = determine_mock_opportunity(inp)
         assert is_mock is False
 
     def test_unknown_vertical_reduces_opportunity(self):
@@ -153,7 +164,7 @@ class TestMockOpportunity:
             has_low_image_count=True,
         )
         result = score_lead(inp)
-        is_mock, reason = determine_mock_opportunity(inp, result)
+        is_mock, reason = determine_mock_opportunity(inp)
         # May still be True if ICP fit is ok, but reason should explain
         assert isinstance(is_mock, bool)
         assert len(reason) > 0

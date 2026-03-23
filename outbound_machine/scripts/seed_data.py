@@ -227,15 +227,16 @@ def seed():
                 has_contact_info=bool(lead.contact_email),
                 avg_variant_count=avg_v,
             )
+            # Mock must be determined BEFORE scoring — it is a scored signal
+            is_mock, mock_reason = determine_mock_opportunity(score_input)
+            score_input.mock_opportunity = is_mock
+            lead.mock_opportunity = is_mock
+            lead.mock_opportunity_reason = mock_reason
+
             score_result = score_lead(score_input, config)
             lead.lead_score = score_result.total_score
             lead.lead_segment = score_result.segment
             lead.score_breakdown = score_result.breakdown
-
-            is_mock, mock_reason = determine_mock_opportunity(score_input, score_result)
-            score_input.mock_opportunity = is_mock
-            lead.mock_opportunity = is_mock
-            lead.mock_opportunity_reason = mock_reason
 
             # Personalisation
             pain = generate_pain_hypothesis(audit, lead.brand_name, lead.vertical)

@@ -12,7 +12,7 @@ class ScoreInput(BaseModel):
     contact_available: bool = False
     has_contact_info: bool = False
 
-    # Imagery audit flags
+    # Imagery audit flags (used for mock determination and per-flag scoring)
     has_low_image_count: bool = False
     has_inconsistent_counts: bool = False
     has_missing_detail_shots: bool = False
@@ -23,7 +23,13 @@ class ScoreInput(BaseModel):
     has_weak_variant_representation: bool = False
     has_catalogue_depth_risk: bool = False
 
-    # Commercial
+    # Finding severity counts — feed directly into additive imagery scoring
+    high_finding_count: int = 0
+    medium_finding_count: int = 0
+    low_finding_count: int = 0
+    total_finding_count: int = 0
+
+    # Commercial — mock_opportunity MUST be set before calling score_lead
     mock_opportunity: bool = False
     avg_variant_count: float = 0.0
 
@@ -42,6 +48,10 @@ class ScoreInput(BaseModel):
             has_mixed_aspect_ratios=audit.has_mixed_aspect_ratios,
             has_weak_variant_representation=audit.has_weak_variant_representation,
             has_catalogue_depth_risk=audit.has_catalogue_depth_risk,
+            high_finding_count=audit.high_count,
+            medium_finding_count=audit.medium_count,
+            low_finding_count=audit.low_count,
+            total_finding_count=len(audit.findings),
             **kwargs,
         )
 

@@ -32,7 +32,7 @@ from app.services.sampling.product_sampler import sample_products
 from app.services.scraping.product_scraper import scrape_product
 from app.services.screenshots.screenshot_service import capture_screenshots
 from app.services.audit.audit_engine import audit_imagery
-from app.services.scoring.scoring_engine import score_lead, determine_mock_opportunity, load_scoring_config
+from app.services.scoring.scoring_engine import score_lead, determine_mock_opportunity, load_scoring_config  # noqa: E501
 from app.services.personalisation.pain_generator import generate_pain_hypothesis
 from app.services.personalisation.email_generator import generate_email
 from app.services.personalisation.loom_generator import generate_loom_script
@@ -224,6 +224,7 @@ def run_scoring_stage(lead: Lead, audit: AuditResult, session: Session) -> Lead:
         if products_db else 0.0
     )
 
+    # Build score input (without mock yet — need to determine it first)
     score_input = ScoreInput.from_audit_result(
         audit,
         shopify_confidence=lead.shopify_confidence or 0.0,
@@ -234,19 +235,18 @@ def run_scoring_stage(lead: Lead, audit: AuditResult, session: Session) -> Lead:
         avg_variant_count=avg_variants,
     )
 
+    # Mock opportunity must be determined BEFORE scoring — it is a scored signal
+    is_mock, mock_reason = determine_mock_opportunity(score_input)
+    score_input.mock_opportunity = is_mock
+    lead.mock_opportunity = is_mock
+    lead.mock_opportunity_reason = mock_reason
+
     config = load_scoring_config()
     score_result = score_lead(score_input, config)
 
     lead.lead_score = score_result.total_score
     lead.lead_segment = score_result.segment
     lead.score_breakdown = score_result.breakdown
-
-    # Mock opportunity
-    is_mock, mock_reason = determine_mock_opportunity(score_input, score_result)
-    # Update ScoreInput with mock flag for potential re-scoring
-    score_input.mock_opportunity = is_mock
-    lead.mock_opportunity = is_mock
-    lead.mock_opportunity_reason = mock_reason
 
     session.flush()
     return lead

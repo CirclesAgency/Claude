@@ -1,96 +1,95 @@
 # ============================================================
-# Prodigi Lead Scoring Configuration
+# Prodigi Lead Scoring Configuration — Additive Points Model
 # ============================================================
-# Total max score = 100.
-# Each category has a max weight. Inputs within each category
-# are multiplied by their weight and summed.
-# Adjust thresholds and weights here without touching code.
+# scoring_method: additive
+#   Each signal contributes explicit points. No averaging.
+#   Multiple findings compound. Severity is differentiated.
+#   Total max = 100 (25 ICP + 45 imagery + 20 commercial + 10 outreach).
+#
+# To adjust: change `points` values directly. No code changes needed.
+
+scoring_method: additive
 
 segments:
-  A: 80
-  B: 65
-  C: 50
-  # D = anything below C threshold
+  A: 80   # top priority — strong ICP + clear pain + mock angle
+  B: 60   # worth working — real issues, some ICP signals
+  C: 40   # marginal — weak pain or weak ICP fit
+  # D = below 40
 
 categories:
-  # How well the brand matches our ICP (max 30 points)
+
+  # ---- ICP Fit (max 25 pts) --------------------------------
+  # Is this brand worth pursuing at all?
   icp_fit:
-    weight: 30
+    max: 25
     inputs:
       shopify_confirmed:
-        # 1.0 if shopify_confidence >= threshold, else 0
-        threshold: 0.7
-        score: 1.0
+        threshold: 0.7          # confident Shopify detection
+        points: 8
+        partial_threshold: 0.4  # possible Shopify
+        partial_points: 4
       sku_fit:
-        # Range bucket scores: the 20-200 range is ideal
+        # 20–200 SKUs is our sweet spot
         buckets:
-          under_20: 0.2
-          "20_50": 0.7
-          "50_100": 1.0
-          "100_200": 1.0
-          "200_plus": 0.6
+          under_20: 2
+          "20_50": 7
+          "50_100": 10
+          "100_200": 10
+          "200_plus": 4
+          unknown: 1
       preferred_vertical:
-        # Verticals we actively target
         preferred:
           - apparel
           - accessories
           - beauty
           - footwear
           - homewares
-        preferred_score: 1.0
-        other_score: 0.4
+          - jewelry
+          - jewellery
+          - skincare
+          - cosmetics
+        points: 7
+        other_points: 2
       contact_available:
-        # Bonus if a contact email/social was found
-        score: 0.3
+        points: 2   # bonus — doesn't block ICP score
 
-  # Strength of imagery improvement opportunity (max 40 points)
+  # ---- Imagery Opportunity (max 45 pts) --------------------
+  # How severe and how broad is the imagery pain?
+  # HIGH findings = commercially critical issues (variants, low count)
+  # MEDIUM findings = meaningful but not conversion-blocking
+  # Breadth bonus rewards catalogues with multiple compounding issues
   imagery_opportunity:
-    weight: 40
-    inputs:
-      low_image_count:
-        # avg images per product <= threshold
-        threshold: 3
-        score: 1.0
-      inconsistent_image_count:
-        # coefficient of variation in image count > threshold
-        cv_threshold: 0.4
-        score: 0.8
-      missing_detail_shots:
-        score: 0.7
-      missing_front_back:
-        score: 0.6
-      inconsistent_backgrounds:
-        score: 0.8
-      inconsistent_framing:
-        score: 0.7
-      mixed_aspect_ratios:
-        score: 0.5
-      weak_variant_representation:
-        score: 0.6
+    max: 45
+    per_severity:
+      high: 12    # per HIGH finding
+      medium: 6   # per MEDIUM finding
+      low: 2      # per LOW finding
+    breadth_bonus:
+      min_findings: 3   # 3+ distinct findings triggers bonus
+      points: 5
 
-  # Commercial potential upside (max 20 points)
+  # ---- Commercial Potential (max 20 pts) -------------------
+  # How clear and large is the business opportunity?
+  # Mock opportunity is a PRIMARY signal — must be set before scoring.
   commercial_potential:
-    weight: 20
+    max: 20
     inputs:
       mock_opportunity:
-        # Is there a clear mock/demo angle?
-        score: 1.0
+        points: 10   # largest single commercial signal
       variant_complexity:
-        # Multiple variants = more SKU work = more pain
-        threshold: 3
-        score: 0.8
+        high_threshold: 4    # avg variants > 4: high complexity
+        high_points: 5
+        medium_threshold: 2  # avg variants > 2: moderate complexity
+        medium_points: 3
       catalogue_depth_risk:
-        # Large catalogue with weak imagery = big pain
-        score: 0.7
+        points: 5    # thin imagery across a large catalogue = scale pain
 
-  # How easy/viable is outreach (max 10 points)
+  # ---- Outreach Viability (max 10 pts) ---------------------
+  # How reachable and warm is the outbound angle?
   outreach_viability:
-    weight: 10
+    max: 10
     inputs:
       has_contact_info:
-        score: 1.0
+        points: 7   # direct contact = strong viability signal
       social_presence:
-        score: 0.5
-      recently_launched:
-        # New brands more likely to be in growth mode
-        score: 0.3
+        points: 3

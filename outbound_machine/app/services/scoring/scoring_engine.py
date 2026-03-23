@@ -1,15 +1,17 @@
 """
 Stage 9 & 10: Lead scoring + mock opportunity flag.
 
-Reads scoring weights from scoring_config.yaml.
-Produces a 0–100 score and A/B/C/D segment.
+Additive points model (scoring_method: additive in config).
+Each signal contributes explicit points — no averaging, no compression.
+Severity is differentiated: HIGH findings worth 2x MEDIUM findings.
+mock_opportunity MUST be determined before calling score_lead and passed
+in ScoreInput — it is the largest single commercial signal (10pts).
 
-Design: fully deterministic, config-driven, no AI calls.
-All scoring logic is transparent and auditable.
+Max possible: ICP(25) + Imagery(45) + Commercial(20) + Outreach(10) = 100.
 """
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import yaml
 
@@ -35,12 +37,59 @@ def load_scoring_config(path: Optional[Path] = None) -> dict:
         return yaml.safe_load(f) or {}
 
 
+def determine_mock_opportunity(score_input: ScoreInput) -> tuple[bool, str]:
+    """
+    Determine whether there is a clear mock/demo opportunity.
+    Call this BEFORE score_lead and pass result into ScoreInput.mock_opportunity.
+
+    Criteria:
+    - Vertical is in our target set (or ICP signals suggest it)
+    - At least one meaningful imagery weakness exists
+    - Not a trivially tiny or unqualified store
+    """
+    vertical_ok = bool(
+        score_input.vertical and
+        score_input.vertical.lower().strip() in MOCK_SUITABLE_VERTICALS
+    )
+
+    has_weakness = any([
+        score_input.has_low_image_count,
+        score_input.has_inconsistent_counts,
+        score_input.has_missing_detail_shots,
+        score_input.has_weak_variant_representation,
+        score_input.has_inconsistent_backgrounds,
+    ])
+
+    # Require at least one finding and a plausible ICP fit
+    sku_ok = score_input.estimated_sku_range not in ("under_20", "unknown")
+
+    if vertical_ok and has_weakness and sku_ok:
+        if score_input.has_weak_variant_representation:
+            reason = "variant imagery gap — can demo per-colour/style renders"
+        elif score_input.has_low_image_count:
+            reason = "low image count — can demo expanding coverage with AI"
+        elif score_input.has_missing_detail_shots:
+            reason = "missing detail shots — can demo close-up/texture renders"
+        elif score_input.has_inconsistent_backgrounds:
+            reason = "inconsistent backgrounds — can demo clean consistent packshots"
+        else:
+            reason = "clear imagery improvement potential"
+        return True, reason
+    elif not vertical_ok:
+        return False, "Vertical not in primary target set"
+    elif not has_weakness:
+        return False, "No significant imagery weakness found — limited demo angle"
+    else:
+        return False, "Store too small or unqualified for meaningful mock"
+
+
 def score_lead(
     score_input: ScoreInput,
     config: Optional[dict] = None,
 ) -> ScoreResult:
     """
-    Compute a weighted lead score from a ScoreInput.
+    Compute an additive lead score from a ScoreInput.
+    mock_opportunity must already be set on score_input before calling this.
     Returns ScoreResult with total, segment, breakdown, and reasoning notes.
     """
     if config is None:
@@ -52,33 +101,25 @@ def score_lead(
 
     cats = config.get("categories", {})
 
-    # --- ICP Fit (max 30) ---
-    icp_weight = cats.get("icp_fit", {}).get("weight", 30)
-    icp_score = _score_icp_fit(score_input, cats.get("icp_fit", {}), reasoning)
-    icp_points = icp_score * icp_weight
-    breakdown["icp_fit"] = round(icp_points, 2)
-    total += icp_points
+    # --- ICP Fit (max 25) ---
+    icp_pts = _score_icp_fit(score_input, cats.get("icp_fit", {}), reasoning)
+    breakdown["icp_fit"] = round(icp_pts, 2)
+    total += icp_pts
 
-    # --- Imagery Opportunity (max 40) ---
-    img_weight = cats.get("imagery_opportunity", {}).get("weight", 40)
-    img_score = _score_imagery_opportunity(score_input, cats.get("imagery_opportunity", {}), reasoning)
-    img_points = img_score * img_weight
-    breakdown["imagery_opportunity"] = round(img_points, 2)
-    total += img_points
+    # --- Imagery Opportunity (max 45) ---
+    img_pts = _score_imagery_opportunity(score_input, cats.get("imagery_opportunity", {}), reasoning)
+    breakdown["imagery_opportunity"] = round(img_pts, 2)
+    total += img_pts
 
     # --- Commercial Potential (max 20) ---
-    comm_weight = cats.get("commercial_potential", {}).get("weight", 20)
-    comm_score = _score_commercial_potential(score_input, cats.get("commercial_potential", {}), reasoning)
-    comm_points = comm_score * comm_weight
-    breakdown["commercial_potential"] = round(comm_points, 2)
-    total += comm_points
+    comm_pts = _score_commercial_potential(score_input, cats.get("commercial_potential", {}), reasoning)
+    breakdown["commercial_potential"] = round(comm_pts, 2)
+    total += comm_pts
 
     # --- Outreach Viability (max 10) ---
-    out_weight = cats.get("outreach_viability", {}).get("weight", 10)
-    out_score = _score_outreach_viability(score_input, cats.get("outreach_viability", {}), reasoning)
-    out_points = out_score * out_weight
-    breakdown["outreach_viability"] = round(out_points, 2)
-    total += out_points
+    out_pts = _score_outreach_viability(score_input, cats.get("outreach_viability", {}), reasoning)
+    breakdown["outreach_viability"] = round(out_pts, 2)
+    total += out_pts
 
     total = round(min(total, 100.0), 1)
     segment = _assign_segment(total, config)
@@ -93,175 +134,165 @@ def score_lead(
     )
 
 
-def determine_mock_opportunity(
-    score_input: ScoreInput,
-    score_result: ScoreResult,
-) -> tuple[bool, str]:
-    """
-    Determine whether there is a clear mock/demo opportunity for this lead.
-    Returns (is_opportunity: bool, reason: str).
-
-    Mock is suitable if:
-    - Vertical is in our target set
-    - There's at least one meaningful imagery weakness
-    - Score is not so low the brand is out of ICP
-    """
-    vertical_ok = (
-        score_input.vertical and
-        score_input.vertical.lower().strip() in MOCK_SUITABLE_VERTICALS
-    ) or score_result.breakdown.get("icp_fit", 0) >= 10
-
-    has_weakness = any([
-        score_input.has_low_image_count,
-        score_input.has_inconsistent_counts,
-        score_input.has_missing_detail_shots,
-        score_input.has_weak_variant_representation,
-        score_input.has_inconsistent_backgrounds,
-    ])
-
-    score_ok = score_result.total_score >= 40
-
-    if vertical_ok and has_weakness and score_ok:
-        reasons = []
-        if score_input.has_weak_variant_representation:
-            reasons.append("variant imagery gap — can demo per-colour/style renders")
-        elif score_input.has_low_image_count:
-            reasons.append("low image count — can demo expanding coverage with AI")
-        elif score_input.has_missing_detail_shots:
-            reasons.append("missing detail shots — can demo close-up/texture renders")
-        elif score_input.has_inconsistent_backgrounds:
-            reasons.append("inconsistent backgrounds — can demo clean consistent packshots")
-        else:
-            reasons.append("clear imagery improvement potential")
-        return True, "; ".join(reasons)
-    elif not vertical_ok:
-        return False, "Vertical not in primary target set — mock less compelling"
-    elif not has_weakness:
-        return False, "No significant imagery weakness found — limited demo angle"
-    else:
-        return False, "Lead score too low — likely out of ICP"
-
-
 # ---------------------------------------------------------------------------
-# Category scoring helpers
+# Category scoring — all additive, no averaging
 # ---------------------------------------------------------------------------
 
 def _score_icp_fit(inp: ScoreInput, cfg: dict, reasoning: list[str]) -> float:
-    """Returns 0.0–1.0 representing ICP fit."""
+    """Additive ICP fit. Max from config (default 25)."""
     inputs = cfg.get("inputs", {})
-    scores: list[float] = []
+    max_pts = cfg.get("max", 25)
+    pts = 0.0
 
-    # Shopify confirmed
+    # Shopify signal
     shopify_cfg = inputs.get("shopify_confirmed", {})
-    threshold = shopify_cfg.get("threshold", 0.7)
-    if inp.shopify_confidence >= threshold:
-        scores.append(shopify_cfg.get("score", 1.0))
-        reasoning.append(f"Shopify confirmed (confidence={inp.shopify_confidence:.2f})")
-    elif inp.shopify_confidence > 0:
-        scores.append(0.4)
-        reasoning.append(f"Shopify probable (confidence={inp.shopify_confidence:.2f})")
+    if inp.shopify_confidence >= shopify_cfg.get("threshold", 0.7):
+        p = shopify_cfg.get("points", 8)
+        pts += p
+        reasoning.append(f"Shopify confirmed ({inp.shopify_confidence:.2f}) +{p}pts")
+    elif inp.shopify_confidence >= shopify_cfg.get("partial_threshold", 0.4):
+        p = shopify_cfg.get("partial_points", 4)
+        pts += p
+        reasoning.append(f"Shopify probable ({inp.shopify_confidence:.2f}) +{p}pts")
+    else:
+        reasoning.append(f"Shopify unconfirmed ({inp.shopify_confidence:.2f}) +0pts")
 
     # SKU fit
     sku_cfg = inputs.get("sku_fit", {}).get("buckets", {})
-    sku_key = inp.estimated_sku_range
-    # Map DB enum values to config keys
-    sku_key_clean = sku_key.replace("-", "_") if sku_key else "unknown"
-    sku_score = sku_cfg.get(sku_key_clean, 0.3)
-    scores.append(sku_score)
-    reasoning.append(f"SKU range={sku_key} (score={sku_score:.2f})")
+    sku_key = (inp.estimated_sku_range or "unknown").replace("-", "_")
+    sku_pts = sku_cfg.get(sku_key, 1)
+    pts += sku_pts
+    reasoning.append(f"SKU range={inp.estimated_sku_range} +{sku_pts}pts")
 
-    # Preferred vertical
+    # Vertical fit
     vert_cfg = inputs.get("preferred_vertical", {})
     vertical = (inp.vertical or "").lower().strip()
     preferred = set(v.lower() for v in vert_cfg.get("preferred", []))
     if vertical in preferred:
-        scores.append(vert_cfg.get("preferred_score", 1.0))
-        reasoning.append(f"Preferred vertical: {vertical}")
+        vp = vert_cfg.get("points", 7)
+        pts += vp
+        reasoning.append(f"Preferred vertical ({vertical}) +{vp}pts")
     else:
-        scores.append(vert_cfg.get("other_score", 0.4))
-        if vertical:
-            reasoning.append(f"Non-preferred vertical: {vertical}")
+        vp = vert_cfg.get("other_points", 2)
+        pts += vp
+        reasoning.append(f"Non-preferred vertical ({vertical or 'unknown'}) +{vp}pts")
 
-    # Contact available
-    if inp.contact_available:
-        scores.append(inputs.get("contact_available", {}).get("score", 0.3))
-        reasoning.append("Contact info available")
+    # Contact bonus
+    if inp.contact_available or inp.has_contact_info:
+        cp = inputs.get("contact_available", {}).get("points", 2)
+        pts += cp
+        reasoning.append(f"Contact info available +{cp}pts")
 
-    return _weighted_mean(scores)
+    return min(pts, max_pts)
 
 
 def _score_imagery_opportunity(inp: ScoreInput, cfg: dict, reasoning: list[str]) -> float:
-    inputs = cfg.get("inputs", {})
-    scores: list[float] = []
+    """
+    Additive severity-based imagery scoring.
+    HIGH findings worth 2x MEDIUM. Breadth bonus for 3+ distinct findings.
+    """
+    max_pts = cfg.get("max", 45)
+    per_sev = cfg.get("per_severity", {"high": 12, "medium": 6, "low": 2})
+    breadth_cfg = cfg.get("breadth_bonus", {"min_findings": 3, "points": 5})
 
-    flag_map = {
-        "low_image_count": (inp.has_low_image_count, "Low image count per product"),
-        "inconsistent_image_count": (inp.has_inconsistent_counts, "Inconsistent image counts"),
-        "missing_detail_shots": (inp.has_missing_detail_shots, "Missing detail shots"),
-        "missing_front_back": (inp.has_missing_front_back, "Missing front/back coverage"),
-        "inconsistent_backgrounds": (inp.has_inconsistent_backgrounds, "Inconsistent backgrounds"),
-        "inconsistent_framing": (inp.has_inconsistent_framing, "Inconsistent framing"),
-        "mixed_aspect_ratios": (inp.has_mixed_aspect_ratios, "Mixed aspect ratios"),
-        "weak_variant_representation": (
-            inp.has_weak_variant_representation, "Weak variant imagery"
-        ),
-    }
+    pts = 0.0
 
-    for key, (flag, label) in flag_map.items():
-        if flag:
-            s = inputs.get(key, {}).get("score", 0.5)
-            scores.append(s)
-            reasoning.append(f"Imagery issue: {label} (+{s:.2f})")
+    high_pts = per_sev.get("high", 12) * inp.high_finding_count
+    med_pts = per_sev.get("medium", 6) * inp.medium_finding_count
+    low_pts = per_sev.get("low", 2) * inp.low_finding_count
 
-    return _weighted_mean(scores) if scores else 0.0
+    if inp.high_finding_count:
+        pts += high_pts
+        reasoning.append(
+            f"{inp.high_finding_count} HIGH finding(s) "
+            f"({per_sev.get('high', 12)}pts each) +{high_pts}pts"
+        )
+    if inp.medium_finding_count:
+        pts += med_pts
+        reasoning.append(
+            f"{inp.medium_finding_count} MEDIUM finding(s) "
+            f"({per_sev.get('medium', 6)}pts each) +{med_pts}pts"
+        )
+    if inp.low_finding_count:
+        pts += low_pts
+        reasoning.append(f"{inp.low_finding_count} LOW finding(s) +{low_pts}pts")
+
+    # Breadth bonus: multiple distinct issues compound the pain
+    if inp.total_finding_count >= breadth_cfg.get("min_findings", 3):
+        bp = breadth_cfg.get("points", 5)
+        pts += bp
+        reasoning.append(
+            f"Breadth bonus ({inp.total_finding_count} distinct findings) +{bp}pts"
+        )
+
+    if pts == 0:
+        reasoning.append("No imagery findings — no opportunity signal")
+
+    return min(pts, max_pts)
 
 
 def _score_commercial_potential(inp: ScoreInput, cfg: dict, reasoning: list[str]) -> float:
+    """Additive commercial signals. Mock opportunity is the anchor point."""
     inputs = cfg.get("inputs", {})
-    scores: list[float] = []
+    max_pts = cfg.get("max", 20)
+    pts = 0.0
 
+    # Mock opportunity — must be pre-computed and set on ScoreInput
     if inp.mock_opportunity:
-        scores.append(inputs.get("mock_opportunity", {}).get("score", 1.0))
-        reasoning.append("Mock/demo opportunity identified")
+        mp = inputs.get("mock_opportunity", {}).get("points", 10)
+        pts += mp
+        reasoning.append(f"Mock opportunity confirmed +{mp}pts")
+    else:
+        reasoning.append("No mock opportunity — commercial signal weak")
 
-    if inp.avg_variant_count > inputs.get("variant_complexity", {}).get("threshold", 3):
-        scores.append(inputs.get("variant_complexity", {}).get("score", 0.8))
-        reasoning.append(f"High variant complexity (avg {inp.avg_variant_count:.0f} variants)")
+    # Variant complexity: high variant count = more imagery work = bigger pain
+    vc_cfg = inputs.get("variant_complexity", {})
+    if inp.avg_variant_count > vc_cfg.get("high_threshold", 4):
+        vp = vc_cfg.get("high_points", 5)
+        pts += vp
+        reasoning.append(f"High variant complexity (avg {inp.avg_variant_count:.1f}) +{vp}pts")
+    elif inp.avg_variant_count > vc_cfg.get("medium_threshold", 2):
+        vp = vc_cfg.get("medium_points", 3)
+        pts += vp
+        reasoning.append(f"Moderate variant complexity (avg {inp.avg_variant_count:.1f}) +{vp}pts")
 
+    # Catalogue depth risk: thin imagery at scale = operational bottleneck pain
     if inp.has_catalogue_depth_risk:
-        scores.append(inputs.get("catalogue_depth_risk", {}).get("score", 0.7))
-        reasoning.append("Catalogue depth risk — scale imagery bottleneck")
+        dp = inputs.get("catalogue_depth_risk", {}).get("points", 5)
+        pts += dp
+        reasoning.append(f"Catalogue depth risk (scale bottleneck) +{dp}pts")
 
-    return _weighted_mean(scores) if scores else 0.0
+    return min(pts, max_pts)
 
 
 def _score_outreach_viability(inp: ScoreInput, cfg: dict, reasoning: list[str]) -> float:
+    """Additive outreach signals. No minimum floor — if no signals, 0."""
     inputs = cfg.get("inputs", {})
-    scores: list[float] = []
+    max_pts = cfg.get("max", 10)
+    pts = 0.0
 
-    if inp.has_contact_info:
-        scores.append(inputs.get("has_contact_info", {}).get("score", 1.0))
-        reasoning.append("Contact info found")
+    if inp.has_contact_info or inp.contact_available:
+        cp = inputs.get("has_contact_info", {}).get("points", 7)
+        pts += cp
+        reasoning.append(f"Contact info found +{cp}pts")
 
     if inp.social_presence:
-        scores.append(inputs.get("social_presence", {}).get("score", 0.5))
-        reasoning.append("Social presence detected")
+        sp = inputs.get("social_presence", {}).get("points", 3)
+        pts += sp
+        reasoning.append(f"Social presence +{sp}pts")
 
-    return _weighted_mean(scores) if scores else 0.2  # small base score
+    if pts == 0:
+        reasoning.append("No outreach signals found")
 
-
-def _weighted_mean(scores: list[float]) -> float:
-    if not scores:
-        return 0.0
-    return sum(scores) / len(scores)
+    return min(pts, max_pts)
 
 
 def _assign_segment(score: float, config: dict) -> str:
-    thresholds = config.get("segments", {"A": 80, "B": 65, "C": 50})
+    thresholds = config.get("segments", {"A": 80, "B": 60, "C": 40})
     if score >= thresholds.get("A", 80):
         return "A"
-    if score >= thresholds.get("B", 65):
+    if score >= thresholds.get("B", 60):
         return "B"
-    if score >= thresholds.get("C", 50):
+    if score >= thresholds.get("C", 40):
         return "C"
     return "D"
