@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: outbound
+      POSTGRES_PASSWORD: outbound
+      POSTGRES_DB: outbound_machine
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U outbound -d outbound_machine"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://outbound:outbound@db:5432/outbound_machine
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+    # Override CMD to keep container running for interactive use:
+    # command: ["tail", "-f", "/dev/null"]
+
+volumes:
+  pgdata:

@@ -1,0 +1,29 @@
+--- LOOM SCRIPT: {{ brand_name }} ---
+Estimated duration: 60–90 seconds
+
+[INTRO — 5 seconds]
+"Hey — this is a quick look at {{ brand_name }}'s store that I wanted to share directly."
+
+[WHY WE LOOKED — 10 seconds]
+"We look at Shopify brands in {{ vertical if vertical else "e-commerce" }} to find stores where there's a clear product imagery opportunity. {{ brand_name }} came up."
+
+[WHAT WE NOTICED — 30 seconds]
+"When I look at your product pages, a few things stand out.
+
+{{ primary_finding_loom }}
+{% if secondary_finding_loom %}
+{{ secondary_finding_loom }}
+{% endif %}
+
+You can see it here — [SHOW PRODUCT PAGE] — {{ specific_observation }}."
+
+[WHAT IT LIKELY MEANS — 20 seconds]
+"{{ operational_implication }}"
+
+[WHAT PRODIGI CAN DO — 15 seconds]
+"Prodigi generates on-brand AI product imagery — consistent backgrounds, proper variant coverage, format-ready assets — without a studio shoot. We can show you what this looks like on your actual products."
+
+[CTA — 5 seconds]
+"Happy to mock one of your SKUs and share it. No obligation — just want to show you what's possible. Reply if that's useful."
+
+--- END SCRIPT ---

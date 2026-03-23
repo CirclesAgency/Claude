@@ -1,0 +1,30 @@
+2026-03-23 11:08:21 | INFO     | app.db.database | Initialising database at: sqlite:///./outbound_machine.db
+2026-03-23 11:08:21 | INFO     | app.db.database | Database ready.
+2026-03-23 11:08:26 | INFO     | app.db.database | Initialising database at: sqlite:///./outbound_machine.db
+2026-03-23 11:08:26 | INFO     | app.db.database | Database ready.
+2026-03-23 11:08:50 | INFO     | app.db.database | Initialising database at: sqlite:///./outbound_machine.db
+2026-03-23 11:08:50 | INFO     | app.db.database | Database ready.
+2026-03-23 11:08:50 | INFO     | app.services.audit.audit_engine | Auditing imagery for 5 products
+2026-03-23 11:08:50 | INFO     | app.services.audit.audit_engine | Audit complete: 5 findings (H=1 M=4 L=0)
+2026-03-23 11:08:50 | INFO     | app.services.scoring.scoring_engine | Score: 79.8 → B | breakdown: {'icp_fit': 24.75, 'imagery_opportunity': 30.0, 'commercial_potential': 15.0, 'outreach_viability': 10.0}
+2026-03-23 11:08:50 | INFO     | app.services.audit.audit_engine | Auditing imagery for 5 products
+2026-03-23 11:08:50 | INFO     | app.services.audit.audit_engine | Audit complete: 3 findings (H=0 M=3 L=0)
+2026-03-23 11:08:50 | INFO     | app.services.scoring.scoring_engine | Score: 73.0 → B | breakdown: {'icp_fit': 27.0, 'imagery_opportunity': 30.0, 'commercial_potential': 14.0, 'outreach_viability': 2.0}
+2026-03-23 11:08:50 | INFO     | app.services.audit.audit_engine | Auditing imagery for 5 products
+2026-03-23 11:08:50 | INFO     | app.services.audit.audit_engine | Audit complete: 5 findings (H=2 M=3 L=0)
+2026-03-23 11:08:50 | INFO     | app.services.scoring.scoring_engine | Score: 78.8 → B | breakdown: {'icp_fit': 24.75, 'imagery_opportunity': 29.0, 'commercial_potential': 15.0, 'outreach_viability': 10.0}
+2026-03-23 11:08:50 | INFO     | app.services.audit.audit_engine | Auditing imagery for 5 products
+2026-03-23 11:08:50 | INFO     | app.services.audit.audit_engine | Audit complete: 0 findings (H=0 M=0 L=0)
+2026-03-23 11:08:50 | INFO     | app.services.scoring.scoring_engine | Score: 32.0 → D | breakdown: {'icp_fit': 30.0, 'imagery_opportunity': 0.0, 'commercial_potential': 0.0, 'outreach_viability': 2.0}
+2026-03-23 11:08:50 | INFO     | app.services.audit.audit_engine | Auditing imagery for 5 products
+2026-03-23 11:08:50 | INFO     | app.services.audit.audit_engine | Audit complete: 6 findings (H=2 M=4 L=0)
+2026-03-23 11:08:50 | INFO     | app.services.scoring.scoring_engine | Score: 77.1 → B | breakdown: {'icp_fit': 22.5, 'imagery_opportunity': 29.6, 'commercial_potential': 15.0, 'outreach_viability': 10.0}
+2026-03-23 11:08:55 | INFO     | app.db.database | Initialising database at: sqlite:///./outbound_machine.db
+2026-03-23 11:08:55 | INFO     | app.db.database | Database ready.
+2026-03-23 11:08:58 | INFO     | app.db.database | Initialising database at: sqlite:///./outbound_machine.db
+2026-03-23 11:08:58 | INFO     | app.db.database | Database ready.
+2026-03-23 11:09:22 | INFO     | app.db.database | Initialising database at: sqlite:///./outbound_machine.db
+2026-03-23 11:09:22 | INFO     | app.db.database | Database ready.
+2026-03-23 11:09:31 | INFO     | app.db.database | Initialising database at: sqlite:///./outbound_machine.db
+2026-03-23 11:09:31 | INFO     | app.db.database | Database ready.
+2026-03-23 11:09:31 | INFO     | app.services.exports.csv_exporter | Review queue exported: data/exports/review_queue_20260323_110931.csv (5 leads)

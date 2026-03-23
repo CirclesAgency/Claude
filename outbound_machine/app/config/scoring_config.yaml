@@ -1,0 +1,96 @@
+# ============================================================
+# Prodigi Lead Scoring Configuration
+# ============================================================
+# Total max score = 100.
+# Each category has a max weight. Inputs within each category
+# are multiplied by their weight and summed.
+# Adjust thresholds and weights here without touching code.
+
+segments:
+  A: 80
+  B: 65
+  C: 50
+  # D = anything below C threshold
+
+categories:
+  # How well the brand matches our ICP (max 30 points)
+  icp_fit:
+    weight: 30
+    inputs:
+      shopify_confirmed:
+        # 1.0 if shopify_confidence >= threshold, else 0
+        threshold: 0.7
+        score: 1.0
+      sku_fit:
+        # Range bucket scores: the 20-200 range is ideal
+        buckets:
+          under_20: 0.2
+          "20_50": 0.7
+          "50_100": 1.0
+          "100_200": 1.0
+          "200_plus": 0.6
+      preferred_vertical:
+        # Verticals we actively target
+        preferred:
+          - apparel
+          - accessories
+          - beauty
+          - footwear
+          - homewares
+        preferred_score: 1.0
+        other_score: 0.4
+      contact_available:
+        # Bonus if a contact email/social was found
+        score: 0.3
+
+  # Strength of imagery improvement opportunity (max 40 points)
+  imagery_opportunity:
+    weight: 40
+    inputs:
+      low_image_count:
+        # avg images per product <= threshold
+        threshold: 3
+        score: 1.0
+      inconsistent_image_count:
+        # coefficient of variation in image count > threshold
+        cv_threshold: 0.4
+        score: 0.8
+      missing_detail_shots:
+        score: 0.7
+      missing_front_back:
+        score: 0.6
+      inconsistent_backgrounds:
+        score: 0.8
+      inconsistent_framing:
+        score: 0.7
+      mixed_aspect_ratios:
+        score: 0.5
+      weak_variant_representation:
+        score: 0.6
+
+  # Commercial potential upside (max 20 points)
+  commercial_potential:
+    weight: 20
+    inputs:
+      mock_opportunity:
+        # Is there a clear mock/demo angle?
+        score: 1.0
+      variant_complexity:
+        # Multiple variants = more SKU work = more pain
+        threshold: 3
+        score: 0.8
+      catalogue_depth_risk:
+        # Large catalogue with weak imagery = big pain
+        score: 0.7
+
+  # How easy/viable is outreach (max 10 points)
+  outreach_viability:
+    weight: 10
+    inputs:
+      has_contact_info:
+        score: 1.0
+      social_presence:
+        score: 0.5
+      recently_launched:
+        # New brands more likely to be in growth mode
+        score: 0.3
