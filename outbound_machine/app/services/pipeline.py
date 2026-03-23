@@ -1,6 +1,9 @@
 """
 Pipeline orchestrator.
 
+Wires all stages together for a single lead, and provides a batch runner
+for processing multiple leads. Each stage is independently runnable.
+
 Also contains AU qualification stage (Stage 0) for the daily AU discovery
 pipeline. This stage gates Shopify detection + SKU estimation against
 configured thresholds before a Lead record is created.
@@ -10,11 +13,6 @@ AU Qualification (Stage 0):
   0b. Shopify detection — filter if confidence < shopify_threshold
   0c. SKU estimation — filter if band not in target_sku_bands
   Result: qualified=True/False + reason string
-"""
-Pipeline orchestrator.
-
-Wires all stages together for a single lead, and provides a batch runner
-for processing multiple leads. Each stage is independently runnable.
 
 Stages:
   1. Shopify detection
