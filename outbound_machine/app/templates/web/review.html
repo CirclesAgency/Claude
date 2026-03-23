@@ -1,0 +1,74 @@
+{% extends "web/base.html" %}
+{% block title %}Review Queue — Prodigi Outbound{% endblock %}
+{% block content %}
+
+<div class="flex-1 overflow-hidden flex flex-col">
+
+  <!-- Header -->
+  <div class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+    <h1 class="text-base font-semibold text-gray-900">Review Queue</h1>
+    <div class="flex gap-3 text-xs text-gray-500">
+      <span class="font-medium text-gray-700">{{ new_leads|length }}</span> pending ·
+      <span class="font-medium text-gray-700">{{ reviewing|length }}</span> reviewing ·
+      <span class="font-medium text-gray-700">{{ approved|length }}</span> approved
+    </div>
+  </div>
+
+  <!-- 3-column kanban -->
+  <div class="flex-1 overflow-hidden grid grid-cols-3 divide-x divide-gray-200">
+
+    <!-- Column: Pending -->
+    <div class="flex flex-col overflow-hidden bg-gray-50">
+      <div class="px-4 py-2.5 border-b border-gray-200 flex items-center gap-2 bg-white">
+        <span class="w-2 h-2 rounded-full bg-gray-400"></span>
+        <span class="text-xs font-semibold text-gray-700">Pending</span>
+        <span class="ml-auto text-xs text-gray-500 bg-gray-100 px-1.5 rounded">{{ new_leads|length }}</span>
+      </div>
+      <div class="flex-1 overflow-y-auto p-3 space-y-2">
+        {% for lead in new_leads %}
+        {% include "web/partials/_kanban_card.html" %}
+        {% endfor %}
+        {% if not new_leads %}
+        <p class="text-xs text-gray-400 text-center py-6">Queue empty</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Column: Needs Edit -->
+    <div class="flex flex-col overflow-hidden bg-yellow-50">
+      <div class="px-4 py-2.5 border-b border-gray-200 flex items-center gap-2 bg-white">
+        <span class="w-2 h-2 rounded-full bg-yellow-400"></span>
+        <span class="text-xs font-semibold text-gray-700">Needs Edit</span>
+        <span class="ml-auto text-xs text-gray-500 bg-gray-100 px-1.5 rounded">{{ reviewing|length }}</span>
+      </div>
+      <div class="flex-1 overflow-y-auto p-3 space-y-2">
+        {% for lead in reviewing %}
+        {% include "web/partials/_kanban_card.html" %}
+        {% endfor %}
+        {% if not reviewing %}
+        <p class="text-xs text-gray-400 text-center py-6">None</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Column: Approved -->
+    <div class="flex flex-col overflow-hidden bg-green-50">
+      <div class="px-4 py-2.5 border-b border-gray-200 flex items-center gap-2 bg-white">
+        <span class="w-2 h-2 rounded-full bg-green-400"></span>
+        <span class="text-xs font-semibold text-gray-700">Approved</span>
+        <span class="ml-auto text-xs text-gray-500 bg-gray-100 px-1.5 rounded">{{ approved|length }}</span>
+      </div>
+      <div class="flex-1 overflow-y-auto p-3 space-y-2">
+        {% for lead in approved %}
+        {% include "web/partials/_kanban_card.html" %}
+        {% endfor %}
+        {% if not approved %}
+        <p class="text-xs text-gray-400 text-center py-6">None</p>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,92 @@
+{% if lead %}
+{% set seg_colors = {"A": "green", "B": "blue", "C": "amber", "D": "red"} %}
+{% set sc = seg_colors.get(lead.lead_segment or "", "gray") %}
+
+<div class="space-y-4">
+
+  <!-- Header -->
+  <div>
+    <div class="flex items-center gap-2 mb-1">
+      <span class="w-6 h-6 rounded text-xs font-bold flex items-center justify-center
+        {% if sc == 'green' %}bg-green-100 text-green-700
+        {% elif sc == 'blue' %}bg-blue-100 text-blue-700
+        {% elif sc == 'amber' %}bg-amber-100 text-amber-700
+        {% elif sc == 'red' %}bg-red-100 text-red-700
+        {% else %}bg-gray-100 text-gray-500{% endif %}">
+        {{ lead.lead_segment or "?" }}
+      </span>
+      <h3 class="text-sm font-semibold text-gray-900">{{ lead.brand_name }}</h3>
+      {% if lead.lead_score %}
+      <span class="ml-auto text-lg font-bold text-gray-700">{{ lead.lead_score|round(0)|int }}</span>
+      {% endif %}
+    </div>
+    <a href="{{ 'https://' + lead.domain }}" target="_blank" class="text-xs text-indigo-500 hover:underline">{{ lead.domain }} ↗</a>
+  </div>
+
+  <!-- Meta pills -->
+  <div class="flex flex-wrap gap-1">
+    {% if lead.vertical %}
+    <span class="px-2 py-0.5 rounded bg-gray-100 text-gray-600 text-xs">{{ lead.vertical }}</span>
+    {% endif %}
+    {% if lead.estimated_sku_range %}
+    <span class="px-2 py-0.5 rounded bg-gray-100 text-gray-600 text-xs">{{ lead.estimated_sku_range.replace("_"," ").replace("r","") }} SKUs</span>
+    {% endif %}
+    {% if lead.au_confidence %}
+    <span class="px-2 py-0.5 rounded {% if lead.au_confidence >= 0.7 %}bg-green-100 text-green-700{% else %}bg-amber-100 text-amber-700{% endif %} text-xs">
+      AU {{ (lead.au_confidence * 100)|round(0)|int }}%
+    </span>
+    {% endif %}
+    {% if lead.mock_opportunity %}
+    <span class="px-2 py-0.5 rounded bg-purple-100 text-purple-700 text-xs font-semibold">Mock ✓</span>
+    {% endif %}
+  </div>
+
+  <!-- Commercial pain -->
+  {% if lead.commercial_pain_hypothesis %}
+  <div>
+    <div class="text-xs font-semibold text-gray-500 mb-1">Pain Hypothesis</div>
+    <p class="text-xs text-gray-700 leading-relaxed">{{ lead.commercial_pain_hypothesis }}</p>
+  </div>
+  {% endif %}
+
+  <!-- Top findings -->
+  {% if findings %}
+  <div>
+    <div class="text-xs font-semibold text-gray-500 mb-1">Top Findings</div>
+    <div class="space-y-1">
+      {% for f in findings %}
+      {% set sev_color = {"HIGH": "red", "MEDIUM": "amber", "LOW": "blue"}.get(f.get("severity",""), "gray") %}
+      <div class="flex items-start gap-1.5">
+        <span class="w-10 text-xs font-semibold text-{{ sev_color }}-600 flex-shrink-0">{{ f.get("severity","?") }}</span>
+        <span class="text-xs text-gray-700">{{ f.get("description", f.get("title", "")) }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Status badges -->
+  <div class="flex gap-2 flex-wrap">
+    {% set rs = lead.review_status.value if lead.review_status else "pending" %}
+    {% set rs_colors = {"pending": "gray", "approved": "green", "rejected": "red", "needs_edit": "yellow"} %}
+    {% set rsc = rs_colors.get(rs, "gray") %}
+    <span class="px-2 py-0.5 rounded text-xs font-medium bg-{{ rsc }}-100 text-{{ rsc }}-700">
+      {{ rs.replace("_"," ").title() }}
+    </span>
+    {% set os = lead.outbound_status.value if lead.outbound_status else "uncontacted" %}
+    {% set os_colors = {"uncontacted": "gray", "queued": "blue", "sent": "purple", "replied": "green"} %}
+    {% set osc = os_colors.get(os, "gray") %}
+    <span class="px-2 py-0.5 rounded text-xs font-medium bg-{{ osc }}-100 text-{{ osc }}-700">
+      {{ os.title() }}
+    </span>
+  </div>
+
+  <!-- Open detail link -->
+  <a href="/leads/{{ lead.id }}" class="block w-full text-center py-2 bg-indigo-600 text-white text-xs font-medium rounded hover:bg-indigo-700 transition-colors">
+    Open Full Detail →
+  </a>
+
+</div>
+{% else %}
+<p class="text-xs text-gray-400 text-center mt-8">Lead not found.</p>
+{% endif %}

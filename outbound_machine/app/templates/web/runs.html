@@ -1,0 +1,102 @@
+{% extends "web/base.html" %}
+{% block title %}Pipeline Runs — Prodigi Outbound{% endblock %}
+{% block content %}
+
+<div class="flex-1 overflow-y-auto">
+
+  <!-- Header -->
+  <div class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+    <h1 class="text-base font-semibold text-gray-900">Pipeline Runs</h1>
+    <span class="text-xs text-gray-400">Last 50 runs</span>
+  </div>
+
+  <!-- Runs table -->
+  <div class="p-6">
+    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <table class="w-full text-xs">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th class="px-4 py-2.5 text-left font-semibold text-gray-600 w-10">#</th>
+            <th class="px-4 py-2.5 text-left font-semibold text-gray-600">Type</th>
+            <th class="px-4 py-2.5 text-left font-semibold text-gray-600">Status</th>
+            <th class="px-4 py-2.5 text-left font-semibold text-gray-600">Started</th>
+            <th class="px-4 py-2.5 text-right font-semibold text-gray-600 w-16">Duration</th>
+            <th class="px-4 py-2.5 text-right font-semibold text-gray-600 w-16">Disc.</th>
+            <th class="px-4 py-2.5 text-right font-semibold text-gray-600 w-16">Qual.</th>
+            <th class="px-4 py-2.5 text-center font-semibold text-gray-600">Segments</th>
+            <th class="px-4 py-2.5 text-right font-semibold text-gray-600 w-14">Errors</th>
+            <th class="px-4 py-2.5 w-10"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for run in runs %}
+          {% set status_colors = {"running": "blue", "completed": "green", "failed": "red", "partial": "amber"} %}
+          {% set sc = status_colors.get(run.status or "running", "gray") %}
+          <tr
+            class="hover:bg-gray-50 cursor-pointer"
+            hx-get="/api/runs/{{ run.id }}/detail"
+            hx-target="#run-detail-{{ run.id }}"
+            hx-swap="innerHTML"
+            @click="document.getElementById('run-detail-{{ run.id }}').classList.toggle('hidden')">
+            <td class="px-4 py-2.5 text-gray-400">{{ run.id }}</td>
+            <td class="px-4 py-2.5 font-medium text-gray-700">{{ run.run_type or "manual" }}</td>
+            <td class="px-4 py-2.5">
+              <span class="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-{{ sc }}-100 text-{{ sc }}-700">
+                {{ run.status or "running" }}
+              </span>
+            </td>
+            <td class="px-4 py-2.5 text-gray-500">
+              {{ run.started_at.strftime("%d %b %H:%M") if run.started_at else "—" }}
+            </td>
+            <td class="px-4 py-2.5 text-right text-gray-500 font-mono">
+              {% if run.duration_seconds %}
+              {% if run.duration_seconds < 60 %}
+              {{ run.duration_seconds|round(1) }}s
+              {% else %}
+              {{ (run.duration_seconds / 60)|round(1) }}m
+              {% endif %}
+              {% else %}—{% endif %}
+            </td>
+            <td class="px-4 py-2.5 text-right text-gray-700 font-medium">{{ run.leads_discovered or 0 }}</td>
+            <td class="px-4 py-2.5 text-right text-gray-700 font-medium">{{ run.leads_qualified or 0 }}</td>
+            <td class="px-4 py-2.5 text-center">
+              <div class="flex items-center justify-center gap-1">
+                {% for seg, color in [("A","green"),("B","blue"),("C","amber"),("D","red")] %}
+                {% set cnt_attr = "leads_" + seg.lower() + "_tier" %}
+                {% set cnt = run[cnt_attr] if run[cnt_attr] is defined else 0 %}
+                <span class="inline-flex items-center justify-center w-5 h-5 rounded text-xs font-bold
+                  bg-{{ color }}-100 text-{{ color }}-700" title="Tier {{ seg }}">
+                  {{ run["leads_a_tier"] if seg == "A" else (run["leads_b_tier"] if seg == "B" else (run["leads_c_tier"] if seg == "C" else run["leads_d_tier"])) or 0 }}
+                </span>
+                {% endfor %}
+              </div>
+            </td>
+            <td class="px-4 py-2.5 text-right">
+              {% if run.error_count %}
+              <span class="text-red-600 font-medium">{{ run.error_count }}</span>
+              {% else %}
+              <span class="text-gray-400">0</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2.5 text-gray-400 text-center">›</td>
+          </tr>
+          <!-- Expandable detail row -->
+          <tr class="hidden bg-indigo-50" id="run-detail-{{ run.id }}">
+            <td colspan="10" class="px-8 py-3 text-xs text-gray-600">
+              Loading…
+            </td>
+          </tr>
+          {% endfor %}
+          {% if not runs %}
+          <tr>
+            <td colspan="10" class="px-4 py-8 text-center text-gray-400">No pipeline runs yet. Run <code class="bg-gray-100 px-1 rounded">outbound run-pipeline</code> to start.</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

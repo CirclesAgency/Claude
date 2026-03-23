@@ -1,0 +1,207 @@
+{% extends "web/base.html" %}
+{% block title %}Outreach — Prodigi Outbound{% endblock %}
+{% block content %}
+
+<div class="flex-1 overflow-hidden flex flex-col">
+
+  <!-- Header -->
+  <div class="bg-white border-b border-gray-200 px-6 py-3">
+    <h1 class="text-base font-semibold text-gray-900">Outreach</h1>
+  </div>
+
+  <!-- Tab nav -->
+  <div class="bg-white border-b border-gray-200 px-6">
+    <nav class="flex gap-0 -mb-px">
+      {% set tab_items = [
+        ("ready", "Ready to Send", "indigo"),
+        ("sent", "Sent", "purple"),
+        ("replied", "Replied", "emerald"),
+        ("follow_up", "Follow-up Due", "amber"),
+        ("booked", "Call Booked", "green"),
+      ] %}
+      {% for tab_key, tab_label, tab_color in tab_items %}
+      <a href="/outreach?tab={{ tab_key }}"
+        class="flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors
+          {% if tab == tab_key %}border-{{ tab_color }}-500 text-{{ tab_color }}-700{% else %}border-transparent text-gray-500 hover:text-gray-700{% endif %}">
+        {{ tab_label }}
+        <span class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-xs">{{ counts.get(tab_key, 0) }}</span>
+      </a>
+      {% endfor %}
+    </nav>
+  </div>
+
+  <!-- Tab content -->
+  <div class="flex-1 overflow-y-auto">
+
+    {% set current_leads = tabs.get(tab, []) %}
+
+    {% if tab == "ready" %}
+    <!-- Ready to Send: show full email preview -->
+    <div class="divide-y divide-gray-100">
+      {% for lead in current_leads %}
+      {% set seg_colors = {"A": "green", "B": "blue", "C": "amber", "D": "red"} %}
+      {% set sc = seg_colors.get(lead.lead_segment or "", "gray") %}
+      <div class="px-6 py-4" x-data="{ expanded: false }">
+        <div class="flex items-center gap-3">
+          <span class="w-6 h-6 rounded text-xs font-bold flex items-center justify-center flex-shrink-0
+            {% if sc == 'green' %}bg-green-100 text-green-700
+            {% elif sc == 'blue' %}bg-blue-100 text-blue-700
+            {% elif sc == 'amber' %}bg-amber-100 text-amber-700
+            {% elif sc == 'red' %}bg-red-100 text-red-700
+            {% else %}bg-gray-100 text-gray-500{% endif %}">
+            {{ lead.lead_segment or "?" }}
+          </span>
+          <div class="flex-1 min-w-0">
+            <a href="/leads/{{ lead.id }}" class="text-sm font-semibold text-gray-900 hover:text-indigo-700">{{ lead.brand_name }}</a>
+            <span class="ml-2 text-xs text-gray-400">{{ lead.domain }}</span>
+          </div>
+          {% if lead.contact_email %}
+          <span class="text-xs text-gray-500">{{ lead.contact_email }}</span>
+          {% endif %}
+          <span class="text-sm font-bold text-gray-600">{{ lead.lead_score|round(0)|int if lead.lead_score else "?" }}</span>
+          <button @click="expanded = !expanded" class="text-xs text-indigo-500 hover:underline w-14 text-right">
+            <span x-show="!expanded">Preview</span><span x-show="expanded" x-cloak>Collapse</span>
+          </button>
+          <button
+            hx-post="/api/leads/{{ lead.id }}/mark-sent"
+            hx-target="#sent-badge-{{ lead.id }}"
+            hx-swap="outerHTML"
+            class="px-3 py-1.5 text-xs font-medium bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors">
+            Mark Sent
+          </button>
+          <span id="sent-badge-{{ lead.id }}"></span>
+        </div>
+        <!-- Email preview -->
+        <div x-show="expanded" x-cloak class="mt-3 ml-9 p-3 bg-gray-50 rounded border border-gray-200 text-xs space-y-1">
+          {% if lead.personalised_email_subject %}
+          <div class="font-semibold text-gray-800">{{ lead.personalised_email_subject }}</div>
+          <div class="text-gray-700 whitespace-pre-line leading-relaxed mt-1">{{ lead.personalised_email_body }}</div>
+          {% else %}
+          <span class="text-gray-400">No email generated yet.</span>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+      {% if not current_leads %}
+      <div class="px-6 py-12 text-center text-gray-400 text-sm">
+        No leads ready to send. Approve leads in the Review Queue first.
+      </div>
+      {% endif %}
+    </div>
+
+    {% elif tab == "follow_up" %}
+    <!-- Follow-up due: show days overdue -->
+    <div class="divide-y divide-gray-100">
+      {% for lead in current_leads %}
+      {% set seg_colors = {"A": "green", "B": "blue", "C": "amber", "D": "red"} %}
+      {% set sc = seg_colors.get(lead.lead_segment or "", "gray") %}
+      <div class="px-6 py-3 flex items-center gap-3">
+        <span class="w-6 h-6 rounded text-xs font-bold flex items-center justify-center flex-shrink-0
+          {% if sc == 'green' %}bg-green-100 text-green-700
+          {% elif sc == 'blue' %}bg-blue-100 text-blue-700
+          {% elif sc == 'amber' %}bg-amber-100 text-amber-700
+          {% elif sc == 'red' %}bg-red-100 text-red-700
+          {% else %}bg-gray-100 text-gray-500{% endif %}">
+          {{ lead.lead_segment or "?" }}
+        </span>
+        <div class="flex-1 min-w-0">
+          <a href="/leads/{{ lead.id }}" class="text-sm font-medium text-gray-900 hover:text-indigo-700">{{ lead.brand_name }}</a>
+          <span class="ml-2 text-xs text-gray-400">{{ lead.domain }}</span>
+        </div>
+        {% if lead.contact_email %}
+        <span class="text-xs text-gray-400">{{ lead.contact_email }}</span>
+        {% endif %}
+        {% if lead.updated_at %}
+        <span class="text-xs font-medium text-amber-600">Sent {{ lead.updated_at.strftime("%d %b") }}</span>
+        {% endif %}
+        <button
+          hx-post="/api/leads/{{ lead.id }}/mark-replied"
+          hx-target="#reply-badge-{{ lead.id }}"
+          hx-swap="outerHTML"
+          class="px-3 py-1.5 text-xs font-medium bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors">
+          Got Reply
+        </button>
+        <span id="reply-badge-{{ lead.id }}"></span>
+      </div>
+      {% endfor %}
+      {% if not current_leads %}
+      <div class="px-6 py-12 text-center text-gray-400 text-sm">No follow-ups due.</div>
+      {% endif %}
+    </div>
+
+    {% else %}
+    <!-- Default table for sent / replied / booked -->
+    <table class="w-full text-xs">
+      <thead class="bg-gray-50 border-b border-gray-200 sticky top-0">
+        <tr>
+          <th class="px-4 py-2 text-left font-semibold text-gray-600">Brand</th>
+          <th class="px-4 py-2 text-left font-semibold text-gray-600">Domain</th>
+          <th class="px-4 py-2 text-center font-semibold text-gray-600 w-12">Seg</th>
+          <th class="px-4 py-2 text-left font-semibold text-gray-600">Contact</th>
+          <th class="px-4 py-2 text-left font-semibold text-gray-600">Updated</th>
+          <th class="px-4 py-2 text-left font-semibold text-gray-600">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for lead in current_leads %}
+        {% set seg_colors = {"A": "green", "B": "blue", "C": "amber", "D": "red"} %}
+        {% set sc = seg_colors.get(lead.lead_segment or "", "gray") %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-2.5">
+            <a href="/leads/{{ lead.id }}" class="font-medium text-gray-900 hover:text-indigo-700">{{ lead.brand_name }}</a>
+          </td>
+          <td class="px-4 py-2.5 text-gray-500">{{ lead.domain }}</td>
+          <td class="px-4 py-2.5 text-center">
+            <span class="inline-flex items-center justify-center w-5 h-5 rounded text-xs font-bold
+              {% if sc == 'green' %}bg-green-100 text-green-700
+              {% elif sc == 'blue' %}bg-blue-100 text-blue-700
+              {% elif sc == 'amber' %}bg-amber-100 text-amber-700
+              {% elif sc == 'red' %}bg-red-100 text-red-700
+              {% else %}bg-gray-100 text-gray-500{% endif %}">
+              {{ lead.lead_segment or "?" }}
+            </span>
+          </td>
+          <td class="px-4 py-2.5 text-gray-500">{{ lead.contact_email or "—" }}</td>
+          <td class="px-4 py-2.5 text-gray-400">{{ lead.updated_at.strftime("%d %b %Y") if lead.updated_at else "—" }}</td>
+          <td class="px-4 py-2.5">
+            {% if tab == "sent" %}
+            <button
+              hx-post="/api/leads/{{ lead.id }}/mark-replied"
+              hx-target="#act-badge-{{ lead.id }}"
+              hx-swap="outerHTML"
+              class="px-2 py-1 text-xs font-medium bg-emerald-50 text-emerald-700 rounded hover:bg-emerald-100 transition-colors">
+              Got Reply
+            </button>
+            <button
+              hx-post="/api/leads/{{ lead.id }}/book-call"
+              hx-target="#act-badge-{{ lead.id }}"
+              hx-swap="outerHTML"
+              class="ml-1 px-2 py-1 text-xs font-medium bg-amber-50 text-amber-700 rounded hover:bg-amber-100 transition-colors">
+              Book Call
+            </button>
+            {% elif tab == "replied" %}
+            <button
+              hx-post="/api/leads/{{ lead.id }}/book-call"
+              hx-target="#act-badge-{{ lead.id }}"
+              hx-swap="outerHTML"
+              class="px-2 py-1 text-xs font-medium bg-amber-50 text-amber-700 rounded hover:bg-amber-100 transition-colors">
+              Book Call
+            </button>
+            {% endif %}
+            <span id="act-badge-{{ lead.id }}"></span>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not current_leads %}
+        <tr>
+          <td colspan="6" class="px-4 py-8 text-center text-gray-400">No leads in this tab.</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+    {% endif %}
+
+  </div>
+</div>
+
+{% endblock %}

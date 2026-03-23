@@ -1,0 +1,25 @@
+{% if run %}
+<div class="grid grid-cols-4 gap-4">
+  <div>
+    <span class="text-gray-500">Started:</span>
+    <span class="ml-1 font-medium">{{ run.started_at.strftime("%d %b %Y %H:%M:%S") if run.started_at else "—" }}</span>
+  </div>
+  <div>
+    <span class="text-gray-500">Completed:</span>
+    <span class="ml-1 font-medium">{{ run.completed_at.strftime("%H:%M:%S") if run.completed_at else "—" }}</span>
+  </div>
+  <div>
+    <span class="text-gray-500">Processed:</span>
+    <span class="ml-1 font-medium">{{ run.leads_processed or 0 }}</span>
+  </div>
+  <div>
+    <span class="text-gray-500">Errors:</span>
+    <span class="ml-1 font-medium {% if run.error_count %}text-red-600{% endif %}">{{ run.error_count or 0 }}</span>
+  </div>
+  {% if run.notes %}
+  <div class="col-span-4 text-gray-600 mt-1">{{ run.notes }}</div>
+  {% endif %}
+</div>
+{% else %}
+<span class="text-gray-400">Run not found.</span>
+{% endif %}

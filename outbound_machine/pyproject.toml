@@ -36,6 +36,10 @@ dependencies = [
     # Optional LLM
     "anthropic>=0.28.0",
     "openai>=1.30.0",
+    # Web dashboard
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]

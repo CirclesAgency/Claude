@@ -24,6 +24,9 @@ Commands:
   detect-au              Run AU confidence detection on a domain or all candidates
   discover-and-qualify-au  Discovery + qualification + pipeline for new AU stores
   run-daily-au-pipeline  Full daily automation: discover → qualify → pipeline → export
+
+  --- Dashboard ---
+  serve                  Start the dashboard web server (default port 8000)
 """
 import json
 import logging
@@ -969,6 +972,17 @@ def run_daily_au_pipeline_cmd(
     console.rule("[bold]Daily AU Pipeline[/bold]")
     ctx.invoke(discover_and_qualify_au_cmd, limit=limit, vertical=vertical, skip_pipeline=False)
     console.rule("[bold]Daily AU Pipeline Complete[/bold]")
+
+
+@cli.command("serve")
+@click.option("--port", default=8000, type=int, help="Port to listen on")
+@click.option("--host", default="0.0.0.0", help="Host to bind")
+@click.option("--reload", is_flag=True, help="Enable auto-reload on code changes")
+def serve_cmd(port: int, host: str, reload: bool):
+    """Start the Prodigi Outbound dashboard web server."""
+    import uvicorn
+    console.print(f"[bold green]Starting dashboard on http://localhost:{port}/[/bold green]")
+    uvicorn.run("app.api.main:app", host=host, port=port, reload=reload)
 
 
 if __name__ == "__main__":
