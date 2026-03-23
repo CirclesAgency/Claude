@@ -175,6 +175,9 @@ class Lead(Base):
     crm_record_id = Column(String(255), nullable=True)
     crm_synced_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Outreach tracking
+    call_booked = Column(Boolean, default=False)
+
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -182,6 +185,10 @@ class Lead(Base):
     candidate = relationship("Candidate", back_populates="lead")
     products = relationship("ProductSample", back_populates="lead", cascade="all, delete-orphan")
     screenshots = relationship("Screenshot", back_populates="lead", cascade="all, delete-orphan")
+    activities = relationship(
+        "LeadActivity", back_populates="lead",
+        cascade="all, delete-orphan", order_by="LeadActivity.created_at",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -248,3 +255,46 @@ class Screenshot(Base):
     capture_error = Column(Text, nullable=True)
 
     lead = relationship("Lead", back_populates="screenshots")
+
+
+# ---------------------------------------------------------------------------
+# Pipeline runs — one record per outbound run-daily-au-pipeline execution
+# ---------------------------------------------------------------------------
+
+class PipelineRun(Base):
+    __tablename__ = "pipeline_runs"
+
+    id = Column(Integer, primary_key=True)
+    run_type = Column(String(50), default="manual")   # "manual" | "daily_au" | "scheduled"
+    status = Column(String(20), default="running")    # "running" | "completed" | "failed"
+    started_at = Column(DateTime(timezone=True), default=utcnow)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    duration_seconds = Column(Float, nullable=True)
+
+    leads_discovered = Column(Integer, default=0)
+    leads_qualified = Column(Integer, default=0)
+    leads_processed = Column(Integer, default=0)
+    leads_a_tier = Column(Integer, default=0)
+    leads_b_tier = Column(Integer, default=0)
+    leads_c_tier = Column(Integer, default=0)
+    leads_d_tier = Column(Integer, default=0)
+    error_count = Column(Integer, default=0)
+    notes = Column(Text, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Lead activities — notes, status changes, email events, call booked
+# ---------------------------------------------------------------------------
+
+class LeadActivity(Base):
+    __tablename__ = "lead_activities"
+
+    id = Column(Integer, primary_key=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
+    activity_type = Column(String(50), nullable=False)
+    # types: note | status_change | email_sent | replied | call_booked | approved | rejected
+    content = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    created_by = Column(String(100), default="system")
+
+    lead = relationship("Lead", back_populates="activities")

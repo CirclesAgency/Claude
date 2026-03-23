@@ -2,6 +2,17 @@ README.md
 pyproject.toml
 app/__init__.py
 app/api/__init__.py
+app/api/deps.py
+app/api/main.py
+app/api/templates.py
+app/api/routes/__init__.py
+app/api/routes/actions.py
+app/api/routes/dashboard.py
+app/api/routes/leads.py
+app/api/routes/outreach.py
+app/api/routes/review.py
+app/api/routes/runs.py
+app/api/routes/settings_route.py
 app/cli/__init__.py
 app/cli/commands.py
 app/config/__init__.py
@@ -28,7 +39,10 @@ app/services/crm/__init__.py
 app/services/crm/base_crm.py
 app/services/crm/webhook_crm.py
 app/services/detection/__init__.py
+app/services/detection/au_detector.py
 app/services/detection/shopify_detector.py
+app/services/discovery/__init__.py
+app/services/discovery/au_store_finder.py
 app/services/exports/__init__.py
 app/services/exports/csv_exporter.py
 app/services/ingestion/__init__.py
@@ -58,6 +72,7 @@ outbound_machine.egg-info/dependency_links.txt
 outbound_machine.egg-info/entry_points.txt
 outbound_machine.egg-info/requires.txt
 outbound_machine.egg-info/top_level.txt
+tests/test_au_detector.py
 tests/test_audit.py
 tests/test_domain.py
 tests/test_ingestion.py
